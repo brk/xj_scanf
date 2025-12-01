@@ -24,13 +24,13 @@ pub type ScanResult<T> = Result<T, ScanError>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LengthModifier {
     None,
-    Hh,  // char
-    H,   // short
-    L,   // long
-    Ll,  // long long
-    J,   // intmax_t
-    Z,   // size_t
-    T,   // ptrdiff_t
+    Hh, // char
+    H,  // short
+    L,  // long
+    Ll, // long long
+    J,  // intmax_t
+    Z,  // size_t
+    T,  // ptrdiff_t
 }
 
 #[derive(Debug, Clone)]
@@ -39,13 +39,13 @@ pub enum ConversionSpec {
     UnsignedInt(LengthModifier),
     OctalInt(LengthModifier),
     HexInt(LengthModifier),
-    AutoInt(LengthModifier),  // %i - auto-detect base
+    AutoInt(LengthModifier), // %i - auto-detect base
     Float(LengthModifier),
     String,
-    Char(usize),  // count
+    Char(usize), // count
     CharSet { inverted: bool, chars: String },
     Pointer,
-    Position,  // %n
+    Position, // %n
     Literal(char),
     Percent,
 }
@@ -131,7 +131,7 @@ impl<'a> Parser<'a> {
             result.push('0');
             self.consume();
             count += 1;
-            
+
             if count < max_width && (self.peek() == Some(b'x') || self.peek() == Some(b'X')) {
                 result.push(self.consume().unwrap() as char);
                 count += 1;
@@ -317,7 +317,12 @@ impl<'a> Parser<'a> {
         Ok(result)
     }
 
-    fn read_charset(&mut self, inverted: bool, charset: &str, width: Option<usize>) -> ScanResult<String> {
+    fn read_charset(
+        &mut self,
+        inverted: bool,
+        charset: &str,
+        width: Option<usize>,
+    ) -> ScanResult<String> {
         let max_width = width.unwrap_or(usize::MAX);
         let mut result = String::new();
         let mut count = 0;
@@ -355,7 +360,6 @@ pub fn parse_format(format: &str) -> ScanResult<Vec<FormatSpec>> {
         if ch == '%' {
             let mut suppress = false;
             let mut width = None;
-            let mut length_mod = LengthModifier::None;
 
             // Check for %%
             if chars.peek() == Some(&'%') {
@@ -389,7 +393,7 @@ pub fn parse_format(format: &str) -> ScanResult<Vec<FormatSpec>> {
             }
 
             // Length modifier
-            length_mod = match chars.peek() {
+            let length_mod = match chars.peek() {
                 Some(&'h') => {
                     chars.next();
                     if chars.peek() == Some(&'h') {
@@ -434,8 +438,8 @@ pub fn parse_format(format: &str) -> ScanResult<Vec<FormatSpec>> {
                 Some('u') => ConversionSpec::UnsignedInt(length_mod),
                 Some('o') => ConversionSpec::OctalInt(length_mod),
                 Some('x') | Some('X') => ConversionSpec::HexInt(length_mod),
-                Some('f') | Some('e') | Some('g') | Some('a') |
-                Some('F') | Some('E') | Some('G') | Some('A') => ConversionSpec::Float(length_mod),
+                Some('f') | Some('e') | Some('g') | Some('a') | Some('F') | Some('E')
+                | Some('G') | Some('A') => ConversionSpec::Float(length_mod),
                 Some('s') => ConversionSpec::String,
                 Some('c') => ConversionSpec::Char(width.unwrap_or(1)),
                 Some('n') => ConversionSpec::Position,
@@ -445,10 +449,10 @@ pub fn parse_format(format: &str) -> ScanResult<Vec<FormatSpec>> {
                     if inverted {
                         chars.next();
                     }
-                    
+
                     let mut charset = String::new();
                     let mut first = true;
-                    
+
                     while let Some(&ch) = chars.peek() {
                         chars.next();
                         if ch == ']' && !first {
@@ -457,10 +461,13 @@ pub fn parse_format(format: &str) -> ScanResult<Vec<FormatSpec>> {
                         charset.push(ch);
                         first = false;
                     }
-                    
+
                     // Expand ranges
                     let expanded = expand_charset(&charset);
-                    ConversionSpec::CharSet { inverted, chars: expanded }
+                    ConversionSpec::CharSet {
+                        inverted,
+                        chars: expanded,
+                    }
                 }
                 _ => return Err(ScanError::InvalidFormat),
             };
@@ -576,7 +583,8 @@ pub fn sscanf_internal(input: &str, format: &str) -> ScanResult<(Vec<ScanValue>,
                 match parser.read_int(spec.width, 8, false) {
                     Ok(s) => {
                         if !spec.suppress {
-                            let val = u64::from_str_radix(&s, 8).map_err(|_| ScanError::MatchFailure)?;
+                            let val =
+                                u64::from_str_radix(&s, 8).map_err(|_| ScanError::MatchFailure)?;
                             values.push(match len_mod {
                                 LengthModifier::None => ScanValue::U32(val as u32),
                                 _ => ScanValue::U64(val),
@@ -603,7 +611,8 @@ pub fn sscanf_internal(input: &str, format: &str) -> ScanResult<(Vec<ScanValue>,
                             } else {
                                 &s
                             };
-                            let val = u64::from_str_radix(hex_str, 16).map_err(|_| ScanError::MatchFailure)?;
+                            let val = u64::from_str_radix(hex_str, 16)
+                                .map_err(|_| ScanError::MatchFailure)?;
                             values.push(match len_mod {
                                 LengthModifier::None => ScanValue::U32(val as u32),
                                 _ => ScanValue::U64(val),
@@ -625,12 +634,14 @@ pub fn sscanf_internal(input: &str, format: &str) -> ScanResult<(Vec<ScanValue>,
                     Ok((s, base)) => {
                         if !spec.suppress {
                             // Strip 0x/0X prefix if present for hex
-                            let int_str = if base == 16 && (s.starts_with("0x") || s.starts_with("0X")) {
-                                &s[2..]
-                            } else {
-                                &s
-                            };
-                            let val = i64::from_str_radix(int_str, base).map_err(|_| ScanError::MatchFailure)?;
+                            let int_str =
+                                if base == 16 && (s.starts_with("0x") || s.starts_with("0X")) {
+                                    &s[2..]
+                                } else {
+                                    &s
+                                };
+                            let val = i64::from_str_radix(int_str, base)
+                                .map_err(|_| ScanError::MatchFailure)?;
                             values.push(match len_mod {
                                 LengthModifier::None => ScanValue::I32(val as i32),
                                 _ => ScanValue::I64(val),
@@ -653,11 +664,13 @@ pub fn sscanf_internal(input: &str, format: &str) -> ScanResult<(Vec<ScanValue>,
                         if !spec.suppress {
                             match len_mod {
                                 LengthModifier::L => {
-                                    let val = s.parse::<f64>().map_err(|_| ScanError::MatchFailure)?;
+                                    let val =
+                                        s.parse::<f64>().map_err(|_| ScanError::MatchFailure)?;
                                     values.push(ScanValue::F64(val));
                                 }
                                 _ => {
-                                    let val = s.parse::<f32>().map_err(|_| ScanError::MatchFailure)?;
+                                    let val =
+                                        s.parse::<f32>().map_err(|_| ScanError::MatchFailure)?;
                                     values.push(ScanValue::F32(val));
                                 }
                             }
@@ -689,42 +702,41 @@ pub fn sscanf_internal(input: &str, format: &str) -> ScanResult<(Vec<ScanValue>,
                     }
                 }
             }
-            ConversionSpec::Char(count) => {
-                match parser.read_chars(count) {
-                    Ok(chars) => {
-                        if !spec.suppress {
-                            if count == 1 {
-                                values.push(ScanValue::Char(chars[0] as char));
-                            } else {
-                                values.push(ScanValue::Chars(chars));
-                            }
-                            assigned_count += 1;
+            ConversionSpec::Char(count) => match parser.read_chars(count) {
+                Ok(chars) => {
+                    if !spec.suppress {
+                        if count == 1 {
+                            values.push(ScanValue::Char(chars[0] as char));
+                        } else {
+                            values.push(ScanValue::Chars(chars));
                         }
-                    }
-                    Err(e) => {
-                        if assigned_count == 0 {
-                            return Err(e);
-                        }
-                        break;
+                        assigned_count += 1;
                     }
                 }
-            }
-            ConversionSpec::CharSet { inverted, ref chars } => {
-                match parser.read_charset(inverted, chars, spec.width) {
-                    Ok(s) => {
-                        if !spec.suppress {
-                            values.push(ScanValue::String(s));
-                            assigned_count += 1;
-                        }
+                Err(e) => {
+                    if assigned_count == 0 {
+                        return Err(e);
                     }
-                    Err(e) => {
-                        if assigned_count == 0 {
-                            return Err(e);
-                        }
-                        break;
+                    break;
+                }
+            },
+            ConversionSpec::CharSet {
+                inverted,
+                ref chars,
+            } => match parser.read_charset(inverted, chars, spec.width) {
+                Ok(s) => {
+                    if !spec.suppress {
+                        values.push(ScanValue::String(s));
+                        assigned_count += 1;
                     }
                 }
-            }
+                Err(e) => {
+                    if assigned_count == 0 {
+                        return Err(e);
+                    }
+                    break;
+                }
+            },
             ConversionSpec::Position => {
                 if !spec.suppress {
                     values.push(ScanValue::Position(parser.pos));
@@ -736,14 +748,16 @@ pub fn sscanf_internal(input: &str, format: &str) -> ScanResult<(Vec<ScanValue>,
                 } else {
                     match parser.consume() {
                         Some(input_ch) if input_ch == ch as u8 => {} // Match
-                        Some(_other_ch) => { // Mismatch
+                        Some(_other_ch) => {
+                            // Mismatch
                             parser.pos -= 1; // "un-consume"
                             if assigned_count == 0 {
                                 return Err(ScanError::MatchFailure);
                             }
                             break;
                         }
-                        None => { // EOF
+                        None => {
+                            // EOF
                             if assigned_count == 0 {
                                 return Err(ScanError::Eof);
                             }
@@ -752,17 +766,15 @@ pub fn sscanf_internal(input: &str, format: &str) -> ScanResult<(Vec<ScanValue>,
                     }
                 }
             }
-            ConversionSpec::Percent => {
-                match parser.consume() {
-                    Some(b'%') => {}
-                    _ => {
-                        if assigned_count == 0 {
-                            return Err(ScanError::MatchFailure);
-                        }
-                        break;
+            ConversionSpec::Percent => match parser.consume() {
+                Some(b'%') => {}
+                _ => {
+                    if assigned_count == 0 {
+                        return Err(ScanError::MatchFailure);
                     }
+                    break;
                 }
-            }
+            },
             ConversionSpec::Pointer => {
                 return Err(ScanError::InvalidFormat);
             }
