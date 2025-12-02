@@ -44,6 +44,46 @@ pub trait ScanTarget {
     fn store(&mut self, value: &ScanValue) -> bool;
 }
 
+impl ScanTarget for i8 {
+    fn store(&mut self, value: &ScanValue) -> bool {
+        match value {
+            ScanValue::I32(v) => {
+                *self = *v as i8;
+                true
+            }
+            ScanValue::I64(v) => {
+                *self = *v as i8;
+                true
+            }
+            ScanValue::Char(c) => {
+                *self = *c as i8;
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
+impl ScanTarget for i16 {
+    fn store(&mut self, value: &ScanValue) -> bool {
+        match value {
+            ScanValue::I32(v) => {
+                *self = *v as i16;
+                true
+            }
+            ScanValue::I64(v) => {
+                *self = *v as i16;
+                true
+            }
+            ScanValue::Char(c) => {
+                *self = *c as i16;
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
 impl ScanTarget for i32 {
     fn store(&mut self, value: &ScanValue) -> bool {
         match value {
@@ -52,6 +92,14 @@ impl ScanTarget for i32 {
                 true
             }
             ScanValue::I64(v) => {
+                *self = *v as i32;
+                true
+            }
+            ScanValue::Char(c) => {
+                *self = *c as i32;
+                true
+            }
+            ScanValue::Position(v) => {
                 *self = *v as i32;
                 true
             }
@@ -71,6 +119,54 @@ impl ScanTarget for i64 {
                 *self = *v;
                 true
             }
+            ScanValue::Char(c) => {
+                *self = *c as i64;
+                true
+            }
+            ScanValue::Position(v) => {
+                *self = *v as i64;
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
+impl ScanTarget for u8 {
+    fn store(&mut self, value: &ScanValue) -> bool {
+        match value {
+            ScanValue::U32(v) => {
+                *self = *v as u8;
+                true
+            }
+            ScanValue::U64(v) => {
+                *self = *v as u8;
+                true
+            }
+            ScanValue::Char(c) => {
+                *self = *c as u8;
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
+impl ScanTarget for u16 {
+    fn store(&mut self, value: &ScanValue) -> bool {
+        match value {
+            ScanValue::U32(v) => {
+                *self = *v as u16;
+                true
+            }
+            ScanValue::U64(v) => {
+                *self = *v as u16;
+                true
+            }
+            ScanValue::Char(c) => {
+                *self = *c as u16;
+                true
+            }
             _ => false,
         }
     }
@@ -84,6 +180,14 @@ impl ScanTarget for u32 {
                 true
             }
             ScanValue::U64(v) => {
+                *self = *v as u32;
+                true
+            }
+            ScanValue::Char(c) => {
+                *self = *c as u32;
+                true
+            }
+            ScanValue::Position(v) => {
                 *self = *v as u32;
                 true
             }
@@ -101,6 +205,14 @@ impl ScanTarget for u64 {
             }
             ScanValue::U64(v) => {
                 *self = *v;
+                true
+            }
+            ScanValue::Char(c) => {
+                *self = *c as u64;
+                true
+            }
+            ScanValue::Position(v) => {
+                *self = *v as u64;
                 true
             }
             _ => false,
@@ -160,6 +272,8 @@ impl ScanTarget for String {
                 true
             }
             ScanValue::Char(v) => {
+                // In C we'd just overwrite the initial byte but that
+                // doesn't fly with Rust's UTF-8 strings.
                 self.clear();
                 self.push(*v);
                 true
@@ -181,13 +295,49 @@ impl ScanTarget for Vec<u8> {
                 true
             }
             ScanValue::Char(v) => {
-                self.clear();
-                self.push(*v as u8);
+                if self.is_empty() {
+                    self.push(*v as u8);
+                } else {
+                    self[0] = *v as u8;
+                }
                 true
             }
             ScanValue::String(v) => {
                 *self = v.as_bytes().to_vec();
                 true
+            }
+            _ => false,
+        }
+    }
+}
+
+impl ScanTarget for &mut [u8] {
+    fn store(&mut self, value: &ScanValue) -> bool {
+        match value {
+            ScanValue::Chars(v) => {
+                if v.len() <= self.len() {
+                    self[..v.len()].copy_from_slice(v);
+                    true
+                } else {
+                    false // Buffer too small
+                }
+            }
+            ScanValue::Char(c) => {
+                if !self.is_empty() {
+                    self[0] = *c as u8;
+                    true
+                } else {
+                    false // Buffer too small
+                }
+            }
+            ScanValue::String(s) => {
+                let bytes = s.as_bytes();
+                if bytes.len() <= self.len() {
+                    self[..bytes.len()].copy_from_slice(bytes);
+                    true
+                } else {
+                    false // Buffer too small
+                }
             }
             _ => false,
         }
@@ -535,11 +685,75 @@ mod tests {
     }
 
     #[test]
+    fn test_scanf_i8() {
+        let mut x: i8 = 0;
+        let count = sscanf("127", "%d", &mut [&mut x]);
+        assert_eq!(count, 1);
+        assert_eq!(x, 127i8);
+    }
+
+    #[test]
+    fn test_scanf_i8_negative() {
+        let mut x: i8 = 0;
+        let count = sscanf("-128", "%d", &mut [&mut x]);
+        assert_eq!(count, 1);
+        assert_eq!(x, -128i8);
+    }
+
+    #[test]
+    fn test_scanf_i8_from_char() {
+        let mut x: i8 = 0;
+        let count = sscanf("A", "%c", &mut [&mut x]);
+        assert_eq!(count, 1);
+        assert_eq!(x, 65i8); // ASCII value of 'A'
+    }
+
+    #[test]
+    fn test_scanf_i16() {
+        let mut x: i16 = 0;
+        let count = sscanf("32767", "%d", &mut [&mut x]);
+        assert_eq!(count, 1);
+        assert_eq!(x, 32767i16);
+    }
+
+    #[test]
+    fn test_scanf_i16_negative() {
+        let mut x: i16 = 0;
+        let count = sscanf("-32768", "%d", &mut [&mut x]);
+        assert_eq!(count, 1);
+        assert_eq!(x, -32768i16);
+    }
+
+    #[test]
     fn test_scanf_vec_u8() {
         let mut buf: Vec<u8> = Vec::new();
         let count = sscanf("ABC", "%3c", &mut [&mut buf]);
         assert_eq!(count, 1);
         assert_eq!(buf, vec![b'A', b'B', b'C']);
+    }
+
+    #[test]
+    fn test_scanf_slice_u8_chars() {
+        let mut buf = [0u8; 10];
+        let count = sscanf("ABC", "%3c", &mut [&mut &mut buf[..]]);
+        assert_eq!(count, 1);
+        assert_eq!(&buf[..3], b"ABC");
+    }
+
+    #[test]
+    fn test_scanf_slice_u8_string() {
+        let mut buf = [0u8; 10];
+        let count = sscanf("hello", "%s", &mut [&mut &mut buf[..]]);
+        assert_eq!(count, 1);
+        assert_eq!(&buf[..5], b"hello");
+    }
+
+    #[test]
+    fn test_scanf_slice_u8_char() {
+        let mut buf = [0u8; 10];
+        let count = sscanf("X", "%c", &mut [&mut &mut buf[..]]);
+        assert_eq!(count, 1);
+        assert_eq!(buf[0], b'X');
     }
 
     #[test]
