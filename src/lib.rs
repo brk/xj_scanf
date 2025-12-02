@@ -68,6 +68,8 @@
 //! - No null pointer issues - Rust's type system prevents this
 //! - No type mismatches - values are returned as typed enums
 
+pub mod legacy;
+
 use std::fmt;
 
 /// Errors that can occur during scanf operations.
