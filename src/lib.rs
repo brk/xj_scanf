@@ -389,7 +389,7 @@ pub fn parse_format(format: &str) -> ScanResult<Vec<FormatSpec>> {
                 }
             }
             if !width_str.is_empty() {
-                width = Some(width_str.parse().unwrap());
+                width = Some(width_str.parse().map_err(|_| ScanError::InvalidFormat)?);
             }
 
             // Length modifier
