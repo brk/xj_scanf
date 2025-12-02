@@ -48,8 +48,8 @@
 //! ```
 //! use xj_scanf::{scanf_str, ScanValue};
 //!
-//! let (values, count) = scanf_str("42 3.14 hello", "%d %f %s").unwrap();
-//! assert_eq!(count, 3);
+//! let values = scanf_str("42 3.14 hello", "%d %f %s").unwrap();
+//! assert_eq!(values.len(), 3);
 //! ```
 //!
 //! # Error Handling
@@ -675,6 +675,11 @@ pub fn parse_format(format: &str) -> ScanResult<Vec<FormatSpec>> {
     Ok(specs)
 }
 
+/// Counts the number of assigned values (excludes Position values from `%n`).
+fn count_assigned(values: &[ScanValue]) -> usize {
+    values.iter().filter(|v| !matches!(v, ScanValue::Position(_))).count()
+}
+
 /// Expands character ranges in a character set specification.
 ///
 /// For example, "a-z" becomes "abcdefghijklmnopqrstuvwxyz".
@@ -710,9 +715,8 @@ fn expand_charset(charset: &str) -> String {
 ///
 /// # Returns
 ///
-/// On success, returns a tuple of:
-/// - `Vec<ScanValue>` - The values parsed from input (including `%n` positions)
-/// - `usize` - The count of successfully assigned conversions (excludes `%n`)
+/// On success, returns a vector of [`ScanValue`]s parsed from input.
+/// This includes values from `%n` (position) conversions.
 ///
 /// # Errors
 ///
@@ -724,8 +728,8 @@ fn expand_charset(charset: &str) -> String {
 ///
 /// - Whitespace in format matches any amount of input whitespace
 /// - `%c` and `%[...]` do NOT skip leading whitespace (use explicit space in format)
-/// - Partial matches return successfully with count of completed conversions
-/// - `%n` stores position but doesn't increment the assignment count
+/// - Partial matches return successfully with the values parsed so far
+/// - `%n` stores position and is included in the returned vector
 ///
 /// # Example
 ///
@@ -733,21 +737,21 @@ fn expand_charset(charset: &str) -> String {
 /// use xj_scanf::{scanf_str, ScanValue};
 ///
 /// // Parse multiple types
-/// let (values, count) = scanf_str("42 3.14 hello", "%d %f %s").unwrap();
-/// assert_eq!(count, 3);
+/// let values = scanf_str("42 3.14 hello", "%d %f %s").unwrap();
+/// assert_eq!(values.len(), 3);
 ///
 /// // Parse with position tracking
-/// let (values, count) = scanf_str("abc", "%s%n").unwrap();
-/// assert_eq!(count, 1);
+/// let values = scanf_str("abc", "%s%n").unwrap();
+/// assert_eq!(values.len(), 2);
 /// if let ScanValue::Position(pos) = values[1] {
 ///     assert_eq!(pos, 3);
 /// }
 ///
 /// // Assignment suppression
-/// let (values, count) = scanf_str("1 2 3", "%*d %d %*d").unwrap();
-/// assert_eq!(count, 1); // Only middle value assigned
+/// let values = scanf_str("1 2 3", "%*d %d %*d").unwrap();
+/// assert_eq!(values.len(), 1); // Only middle value assigned
 /// ```
-pub fn scanf_str(input: &str, format: &str) -> ScanResult<(Vec<ScanValue>, usize)> {
+pub fn scanf_str(input: &str, format: &str) -> ScanResult<Vec<ScanValue>> {
     scanf_core(input.as_bytes(), format)
 }
 
@@ -763,9 +767,8 @@ pub fn scanf_str(input: &str, format: &str) -> ScanResult<(Vec<ScanValue>, usize
 ///
 /// # Returns
 ///
-/// On success, returns a tuple of:
-/// - `Vec<ScanValue>` - The values parsed from input (including `%n` positions)
-/// - `usize` - The count of successfully assigned conversions (excludes `%n`)
+/// On success, returns a vector of [`ScanValue`]s parsed from input.
+/// This includes values from `%n` (position) conversions.
 ///
 /// # Errors
 ///
@@ -780,14 +783,13 @@ pub fn scanf_str(input: &str, format: &str) -> ScanResult<(Vec<ScanValue>, usize
 /// use std::io::Cursor;
 ///
 /// let data = Cursor::new("123 456");
-/// let (values, count) = scanf_core(data, "%d %d").unwrap();
-/// assert_eq!(count, 2);
+/// let values = scanf_core(data, "%d %d").unwrap();
+/// assert_eq!(values.len(), 2);
 /// ```
-pub fn scanf_core<R: BufRead>(reader: R, format: &str) -> ScanResult<(Vec<ScanValue>, usize)> {
+pub fn scanf_core<R: BufRead>(reader: R, format: &str) -> ScanResult<Vec<ScanValue>> {
     let specs = parse_format(format)?;
     let mut parser = Parser::new(reader);
     let mut values = Vec::new();
-    let mut assigned_count = 0;
 
     if parser.peek().is_none() && !specs.is_empty() {
         // Check if first spec would require input
@@ -809,11 +811,10 @@ pub fn scanf_core<R: BufRead>(reader: R, format: &str) -> ScanResult<(Vec<ScanVa
                                 LengthModifier::None => ScanValue::I32(val as i32),
                                 _ => ScanValue::I64(val),
                             });
-                            assigned_count += 1;
                         }
                     }
                     Err(e) => {
-                        if assigned_count == 0 {
+                        if count_assigned(&values) == 0 {
                             return Err(e);
                         }
                         break;
@@ -830,11 +831,10 @@ pub fn scanf_core<R: BufRead>(reader: R, format: &str) -> ScanResult<(Vec<ScanVa
                                 LengthModifier::None => ScanValue::U32(val as u32),
                                 _ => ScanValue::U64(val),
                             });
-                            assigned_count += 1;
                         }
                     }
                     Err(e) => {
-                        if assigned_count == 0 {
+                        if count_assigned(&values) == 0 {
                             return Err(e);
                         }
                         break;
@@ -852,11 +852,10 @@ pub fn scanf_core<R: BufRead>(reader: R, format: &str) -> ScanResult<(Vec<ScanVa
                                 LengthModifier::None => ScanValue::U32(val as u32),
                                 _ => ScanValue::U64(val),
                             });
-                            assigned_count += 1;
                         }
                     }
                     Err(e) => {
-                        if assigned_count == 0 {
+                        if count_assigned(&values) == 0 {
                             return Err(e);
                         }
                         break;
@@ -880,11 +879,10 @@ pub fn scanf_core<R: BufRead>(reader: R, format: &str) -> ScanResult<(Vec<ScanVa
                                 LengthModifier::None => ScanValue::U32(val as u32),
                                 _ => ScanValue::U64(val),
                             });
-                            assigned_count += 1;
                         }
                     }
                     Err(e) => {
-                        if assigned_count == 0 {
+                        if count_assigned(&values) == 0 {
                             return Err(e);
                         }
                         break;
@@ -909,11 +907,10 @@ pub fn scanf_core<R: BufRead>(reader: R, format: &str) -> ScanResult<(Vec<ScanVa
                                 LengthModifier::None => ScanValue::I32(val as i32),
                                 _ => ScanValue::I64(val),
                             });
-                            assigned_count += 1;
                         }
                     }
                     Err(e) => {
-                        if assigned_count == 0 {
+                        if count_assigned(&values) == 0 {
                             return Err(e);
                         }
                         break;
@@ -937,11 +934,10 @@ pub fn scanf_core<R: BufRead>(reader: R, format: &str) -> ScanResult<(Vec<ScanVa
                                     values.push(ScanValue::F32(val));
                                 }
                             }
-                            assigned_count += 1;
                         }
                     }
                     Err(e) => {
-                        if assigned_count == 0 {
+                        if count_assigned(&values) == 0 {
                             return Err(e);
                         }
                         break;
@@ -954,11 +950,10 @@ pub fn scanf_core<R: BufRead>(reader: R, format: &str) -> ScanResult<(Vec<ScanVa
                     Ok(s) => {
                         if !spec.suppress {
                             values.push(ScanValue::String(s));
-                            assigned_count += 1;
                         }
                     }
                     Err(e) => {
-                        if assigned_count == 0 && e == ScanError::Eof {
+                        if count_assigned(&values) == 0 && e == ScanError::Eof {
                             return Err(ScanError::Eof);
                         }
                         return Err(e);
@@ -973,11 +968,10 @@ pub fn scanf_core<R: BufRead>(reader: R, format: &str) -> ScanResult<(Vec<ScanVa
                         } else {
                             values.push(ScanValue::Chars(chars));
                         }
-                        assigned_count += 1;
                     }
                 }
                 Err(e) => {
-                    if assigned_count == 0 {
+                    if count_assigned(&values) == 0 {
                         return Err(e);
                     }
                     break;
@@ -990,11 +984,10 @@ pub fn scanf_core<R: BufRead>(reader: R, format: &str) -> ScanResult<(Vec<ScanVa
                 Ok(s) => {
                     if !spec.suppress {
                         values.push(ScanValue::String(s));
-                        assigned_count += 1;
                     }
                 }
                 Err(e) => {
-                    if assigned_count == 0 {
+                    if count_assigned(&values) == 0 {
                         return Err(e);
                     }
                     break;
@@ -1014,14 +1007,14 @@ pub fn scanf_core<R: BufRead>(reader: R, format: &str) -> ScanResult<(Vec<ScanVa
                         Some(other_ch) => {
                             // Mismatch - put byte back
                             parser.unconsume(other_ch);
-                            if assigned_count == 0 {
+                            if count_assigned(&values) == 0 {
                                 return Err(ScanError::MatchFailure);
                             }
                             break;
                         }
                         None => {
                             // EOF
-                            if assigned_count == 0 {
+                            if count_assigned(&values) == 0 {
                                 return Err(ScanError::Eof);
                             }
                             break;
@@ -1032,7 +1025,7 @@ pub fn scanf_core<R: BufRead>(reader: R, format: &str) -> ScanResult<(Vec<ScanVa
             ConversionSpec::Percent => match parser.consume() {
                 Some(b'%') => {}
                 _ => {
-                    if assigned_count == 0 {
+                    if count_assigned(&values) == 0 {
                         return Err(ScanError::MatchFailure);
                     }
                     break;
@@ -1044,7 +1037,7 @@ pub fn scanf_core<R: BufRead>(reader: R, format: &str) -> ScanResult<(Vec<ScanVa
         }
     }
 
-    Ok((values, assigned_count))
+    Ok(values)
 }
 
 #[cfg(test)]
@@ -1053,8 +1046,8 @@ mod tests {
 
     #[test]
     fn test_simple_decimal_int() {
-        let (values, count) = scanf_str("42", "%d").unwrap();
-        assert_eq!(count, 1);
+        let values = scanf_str("42", "%d").unwrap();
+        assert_eq!(values.len(), 1);
         match values[0] {
             ScanValue::I32(x) => assert_eq!(x, 42),
             _ => panic!("Wrong type"),
@@ -1063,8 +1056,7 @@ mod tests {
 
     #[test]
     fn test_negative_int() {
-        let (values, count) = scanf_str("-123", "%d").unwrap();
-        assert_eq!(count, 1);
+        let values = scanf_str("-123", "%d").unwrap();
         match values[0] {
             ScanValue::I32(x) => assert_eq!(x, -123),
             _ => panic!("Wrong type"),
@@ -1073,8 +1065,7 @@ mod tests {
 
     #[test]
     fn test_multiple_ints() {
-        let (values, count) = scanf_str("1 2 3", "%d %d %d").unwrap();
-        assert_eq!(count, 3);
+        let values = scanf_str("1 2 3", "%d %d %d").unwrap();
         match (&values[0], &values[1], &values[2]) {
             (ScanValue::I32(a), ScanValue::I32(b), ScanValue::I32(c)) => {
                 assert_eq!(*a, 1);
@@ -1087,8 +1078,7 @@ mod tests {
 
     #[test]
     fn test_unsigned_int() {
-        let (values, count) = scanf_str("4294967295", "%u").unwrap();
-        assert_eq!(count, 1);
+        let values = scanf_str("4294967295", "%u").unwrap();
         match values[0] {
             ScanValue::U32(x) => assert_eq!(x, 4294967295),
             _ => panic!("Wrong type"),
@@ -1097,8 +1087,7 @@ mod tests {
 
     #[test]
     fn test_octal_int() {
-        let (values, count) = scanf_str("755", "%o").unwrap();
-        assert_eq!(count, 1);
+        let values = scanf_str("755", "%o").unwrap();
         match values[0] {
             ScanValue::U32(x) => assert_eq!(x, 0o755),
             _ => panic!("Wrong type"),
@@ -1107,8 +1096,7 @@ mod tests {
 
     #[test]
     fn test_hex_int() {
-        let (values, count) = scanf_str("1a2b", "%x").unwrap();
-        assert_eq!(count, 1);
+        let values = scanf_str("1a2b", "%x").unwrap();
         match values[0] {
             ScanValue::U32(x) => assert_eq!(x, 0x1a2b),
             _ => panic!("Wrong type"),
@@ -1117,8 +1105,7 @@ mod tests {
 
     #[test]
     fn test_hex_with_prefix() {
-        let (values, count) = scanf_str("0xDEAD", "%x").unwrap();
-        assert_eq!(count, 1);
+        let values = scanf_str("0xDEAD", "%x").unwrap();
         match values[0] {
             ScanValue::U32(x) => assert_eq!(x, 0xDEAD),
             _ => panic!("Wrong type"),
@@ -1127,8 +1114,7 @@ mod tests {
 
     #[test]
     fn test_i_decimal() {
-        let (values, count) = scanf_str("123", "%i").unwrap();
-        assert_eq!(count, 1);
+        let values = scanf_str("123", "%i").unwrap();
         match values[0] {
             ScanValue::I32(x) => assert_eq!(x, 123),
             _ => panic!("Wrong type"),
@@ -1137,8 +1123,7 @@ mod tests {
 
     #[test]
     fn test_i_octal() {
-        let (values, count) = scanf_str("0755", "%i").unwrap();
-        assert_eq!(count, 1);
+        let values = scanf_str("0755", "%i").unwrap();
         match values[0] {
             ScanValue::I32(x) => assert_eq!(x, 0o755),
             _ => panic!("Wrong type"),
@@ -1147,8 +1132,7 @@ mod tests {
 
     #[test]
     fn test_i_hex() {
-        let (values, count) = scanf_str("0x1A", "%i").unwrap();
-        assert_eq!(count, 1);
+        let values = scanf_str("0x1A", "%i").unwrap();
         match values[0] {
             ScanValue::I32(x) => assert_eq!(x, 0x1A),
             _ => panic!("Wrong type"),
@@ -1157,8 +1141,7 @@ mod tests {
 
     #[test]
     fn test_float_basic() {
-        let (values, count) = scanf_str("3.14", "%f").unwrap();
-        assert_eq!(count, 1);
+        let values = scanf_str("3.14", "%f").unwrap();
         match values[0] {
             ScanValue::F32(x) => assert!((x - 3.14).abs() < 0.001),
             _ => panic!("Wrong type"),
@@ -1167,8 +1150,7 @@ mod tests {
 
     #[test]
     fn test_float_negative() {
-        let (values, count) = scanf_str("-2.5", "%f").unwrap();
-        assert_eq!(count, 1);
+        let values = scanf_str("-2.5", "%f").unwrap();
         match values[0] {
             ScanValue::F32(x) => assert!((x + 2.5).abs() < 0.001),
             _ => panic!("Wrong type"),
@@ -1177,8 +1159,7 @@ mod tests {
 
     #[test]
     fn test_float_exponent() {
-        let (values, count) = scanf_str("1.5e2", "%f").unwrap();
-        assert_eq!(count, 1);
+        let values = scanf_str("1.5e2", "%f").unwrap();
         match values[0] {
             ScanValue::F32(x) => assert!((x - 150.0).abs() < 0.001),
             _ => panic!("Wrong type"),
@@ -1187,8 +1168,7 @@ mod tests {
 
     #[test]
     fn test_string_basic() {
-        let (values, count) = scanf_str("hello", "%s").unwrap();
-        assert_eq!(count, 1);
+        let values = scanf_str("hello", "%s").unwrap();
         match &values[0] {
             ScanValue::String(s) => assert_eq!(s, "hello"),
             _ => panic!("Wrong type"),
@@ -1197,8 +1177,7 @@ mod tests {
 
     #[test]
     fn test_string_stops_at_whitespace() {
-        let (values, count) = scanf_str("hello world", "%s").unwrap();
-        assert_eq!(count, 1);
+        let values = scanf_str("hello world", "%s").unwrap();
         match &values[0] {
             ScanValue::String(s) => assert_eq!(s, "hello"),
             _ => panic!("Wrong type"),
@@ -1207,8 +1186,7 @@ mod tests {
 
     #[test]
     fn test_string_with_width() {
-        let (values, count) = scanf_str("verylongword", "%5s").unwrap();
-        assert_eq!(count, 1);
+        let values = scanf_str("verylongword", "%5s").unwrap();
         match &values[0] {
             ScanValue::String(s) => assert_eq!(s, "veryl"),
             _ => panic!("Wrong type"),
@@ -1217,8 +1195,7 @@ mod tests {
 
     #[test]
     fn test_multiple_strings() {
-        let (values, count) = scanf_str("hello world", "%s %s").unwrap();
-        assert_eq!(count, 2);
+        let values = scanf_str("hello world", "%s %s").unwrap();
         match (&values[0], &values[1]) {
             (ScanValue::String(s1), ScanValue::String(s2)) => {
                 assert_eq!(s1, "hello");
@@ -1230,8 +1207,7 @@ mod tests {
 
     #[test]
     fn test_char_single() {
-        let (values, count) = scanf_str("A", "%c").unwrap();
-        assert_eq!(count, 1);
+        let values = scanf_str("A", "%c").unwrap();
         match values[0] {
             ScanValue::Char(c) => assert_eq!(c, 'A'),
             _ => panic!("Wrong type"),
@@ -1240,8 +1216,7 @@ mod tests {
 
     #[test]
     fn test_char_no_whitespace_skip() {
-        let (values, count) = scanf_str(" A", "%c").unwrap();
-        assert_eq!(count, 1);
+        let values = scanf_str(" A", "%c").unwrap();
         match values[0] {
             ScanValue::Char(c) => assert_eq!(c, ' '),
             _ => panic!("Wrong type"),
@@ -1250,8 +1225,7 @@ mod tests {
 
     #[test]
     fn test_char_multiple() {
-        let (values, count) = scanf_str("ABCD", "%3c").unwrap();
-        assert_eq!(count, 1);
+        let values = scanf_str("ABCD", "%3c").unwrap();
         match &values[0] {
             ScanValue::Chars(chars) => {
                 assert_eq!(chars.len(), 3);
@@ -1265,8 +1239,7 @@ mod tests {
 
     #[test]
     fn test_charset_basic() {
-        let (values, count) = scanf_str("abc123", "%[a-z]").unwrap();
-        assert_eq!(count, 1);
+        let values = scanf_str("abc123", "%[a-z]").unwrap();
         match &values[0] {
             ScanValue::String(s) => assert_eq!(s, "abc"),
             _ => panic!("Wrong type"),
@@ -1275,8 +1248,7 @@ mod tests {
 
     #[test]
     fn test_charset_inverted() {
-        let (values, count) = scanf_str("abc:def", "%[^:]").unwrap();
-        assert_eq!(count, 1);
+        let values = scanf_str("abc:def", "%[^:]").unwrap();
         match &values[0] {
             ScanValue::String(s) => assert_eq!(s, "abc"),
             _ => panic!("Wrong type"),
@@ -1285,8 +1257,7 @@ mod tests {
 
     #[test]
     fn test_suppression_int() {
-        let (values, count) = scanf_str("1 2 3", "%*d %d %*d").unwrap();
-        assert_eq!(count, 1);
+        let values = scanf_str("1 2 3", "%*d %d %*d").unwrap();
         match values[0] {
             ScanValue::I32(x) => assert_eq!(x, 2),
             _ => panic!("Wrong type"),
@@ -1295,8 +1266,7 @@ mod tests {
 
     #[test]
     fn test_n_at_end() {
-        let (values, count) = scanf_str("123", "%d%n").unwrap();
-        assert_eq!(count, 1);
+        let values = scanf_str("123", "%d%n").unwrap();
         match (&values[0], &values[1]) {
             (ScanValue::I32(x), ScanValue::Position(n)) => {
                 assert_eq!(*x, 123);
@@ -1308,8 +1278,7 @@ mod tests {
 
     #[test]
     fn test_literal_match() {
-        let (values, count) = scanf_str("1,2", "%d,%d").unwrap();
-        assert_eq!(count, 2);
+        let values = scanf_str("1,2", "%d,%d").unwrap();
         match (&values[0], &values[1]) {
             (ScanValue::I32(x), ScanValue::I32(y)) => {
                 assert_eq!(*x, 1);
@@ -1333,8 +1302,7 @@ mod tests {
 
     #[test]
     fn test_partial_match() {
-        let (values, count) = scanf_str("123 abc", "%d %d").unwrap();
-        assert_eq!(count, 1);
+        let values = scanf_str("123 abc", "%d %d").unwrap();
         match values[0] {
             ScanValue::I32(x) => assert_eq!(x, 123),
             _ => panic!("Wrong type"),
@@ -1343,8 +1311,7 @@ mod tests {
 
     #[test]
     fn test_percent_literal() {
-        let (values, count) = scanf_str("%42", "%%%d").unwrap();
-        assert_eq!(count, 1);
+        let values = scanf_str("%42", "%%%d").unwrap();
         match values[0] {
             ScanValue::I32(x) => assert_eq!(x, 42),
             _ => panic!("Wrong type"),
@@ -1353,8 +1320,7 @@ mod tests {
 
     #[test]
     fn test_eof_in_format() {
-        let (values, count) = scanf_str("0", "%f%c").unwrap();
-        assert_eq!(count, 1);
+        let values = scanf_str("0", "%f%c").unwrap();
         assert_eq!(values.len(), 1);
         match values[0] {
             ScanValue::F32(f) => assert_eq!(f, 0.0f32),
@@ -1370,8 +1336,7 @@ mod tests {
 
     #[test]
     fn test_bytes_consumed_at_eof() {
-        let (values, count) = scanf_str("aa", "%s%n").unwrap();
-        assert_eq!(count, 1);
+        let values = scanf_str("aa", "%s%n").unwrap();
         assert_eq!(values.len(), 2);
         match &values[0] {
             ScanValue::String(s) => assert_eq!(s, "aa"),

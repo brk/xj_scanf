@@ -216,11 +216,16 @@ impl ScanTarget for usize {
 
 /// Helper to convert scanf result to C-style return value and store values.
 fn process_scanf_result(
-    result: ScanResult<(Vec<ScanValue>, usize)>,
+    result: ScanResult<Vec<ScanValue>>,
     args: &mut [&mut dyn ScanTarget],
 ) -> i32 {
     match result {
-        Ok((values, count)) => {
+        Ok(values) => {
+            // Count non-Position values (Position from %n doesn't count toward assignment count)
+            let count = values.iter()
+                .filter(|v| !matches!(v, ScanValue::Position(_)))
+                .count();
+
             for (arg, val) in args.iter_mut().zip(values.iter()) {
                 arg.store(val);
             }
