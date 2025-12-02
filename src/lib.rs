@@ -1,9 +1,84 @@
+//! A safe, memory-safe Rust implementation of C's `sscanf` function.
+//!
+//! This library provides format string parsing functionality similar to C's scanf family,
+//! but with Rust's safety guarantees - no buffer overflows, no undefined behavior.
+//!
+//! # Supported Format Specifiers
+//!
+//! ## Integer Conversions
+//! - `%d` - Signed decimal integer
+//! - `%i` - Signed integer with auto-detection (base 10, 8 for '0' prefix, 16 for '0x'/'0X' prefix)
+//! - `%o` - Unsigned octal integer
+//! - `%u` - Unsigned decimal integer
+//! - `%x`, `%X` - Unsigned hexadecimal integer
+//!
+//! ## Floating-Point Conversions
+//! - `%f`, `%F`, `%e`, `%E`, `%g`, `%G`, `%a`, `%A` - Floating-point number
+//!
+//! ## Character/String Conversions
+//! - `%c` - Fixed number of characters (default 1)
+//! - `%s` - Sequence of non-whitespace characters
+//! - `%[...]` - Character set matching
+//! - `%[^...]` - Inverted character set matching
+//!
+//! ## Special Conversions
+//! - `%n` - Store number of characters consumed so far
+//! - `%%` - Literal percent sign
+//!
+//! # Modifiers
+//!
+//! ## Assignment Suppression
+//! - `*` - Suppresses assignment; conversion happens but result is discarded
+//!
+//! ## Length Modifiers
+//! - `hh` - char (for integer conversions)
+//! - `h` - short int (for integer conversions)
+//! - `l` - long int (for integers), double (for floats)
+//! - `ll` - long long int (for integer conversions)
+//! - `L` - long double (for float conversions)
+//! - `j` - intmax_t (for integer conversions)
+//! - `t` - ptrdiff_t (for integer conversions)
+//! - `z` - size_t (for integer conversions)
+//!
+//! ## Field Width
+//! - Decimal integer between `%` and conversion specifier limits maximum bytes scanned
+//!
+//! # Example
+//!
+//! ```
+//! use xj_scanf::{sscanf_core, ScanValue};
+//!
+//! let (values, count) = sscanf_core("42 3.14 hello", "%d %f %s").unwrap();
+//! assert_eq!(count, 3);
+//! ```
+//!
+//! # Error Handling
+//!
+//! Unlike C's sscanf which returns magic values, this implementation uses proper
+//! `Result` types:
+//! - `Ok((values, count))` - Successful parse with assigned values and count
+//! - `Err(ScanError::Eof)` - Input exhausted before first conversion
+//! - `Err(ScanError::MatchFailure)` - Input doesn't match format
+//! - `Err(ScanError::InvalidFormat)` - Malformed format string
+//!
+//! # Safety
+//!
+//! This implementation avoids all undefined behavior present in C's sscanf:
+//! - No buffer overflows - all bounds are checked
+//! - No null pointer issues - Rust's type system prevents this
+//! - No type mismatches - values are returned as typed enums
+
 use std::fmt;
 
+/// Errors that can occur during scanf operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScanError {
+    /// The format string is malformed (e.g., incomplete conversion specifier,
+    /// unclosed bracket in character set, or unsupported conversion like `%p`).
     InvalidFormat,
+    /// Input does not match the expected format (e.g., trying to parse "abc" as `%d`).
     MatchFailure,
+    /// End of input reached before any conversion could complete.
     Eof,
 }
 
@@ -19,60 +94,118 @@ impl fmt::Display for ScanError {
 
 impl std::error::Error for ScanError {}
 
+/// A type alias for Results with [`ScanError`].
 pub type ScanResult<T> = Result<T, ScanError>;
 
+/// Length modifiers that affect the size/type of the converted value.
+///
+/// These correspond to C's length modifiers like `h`, `l`, `ll`, etc.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LengthModifier {
+    /// No length modifier specified (default sizes: int, float).
     None,
-    Hh, // char
-    H,  // short
-    L,  // long
-    Ll, // long long
-    J,  // intmax_t
-    Z,  // size_t
-    T,  // ptrdiff_t
+    /// `hh` - char-sized integer.
+    Hh,
+    /// `h` - short int.
+    H,
+    /// `l` - long int for integers, double for floats.
+    L,
+    /// `ll` - long long int.
+    Ll,
+    /// `j` - intmax_t (maximum width integer).
+    J,
+    /// `z` - size_t.
+    Z,
+    /// `t` - ptrdiff_t.
+    T,
 }
 
+/// The type of conversion to perform, parsed from a format specifier.
+///
+/// Each variant corresponds to a conversion specifier in the format string
+/// (e.g., `%d`, `%s`, `%[...]`).
 #[derive(Debug, Clone)]
 pub enum ConversionSpec {
+    /// `%d` - Signed decimal integer.
     SignedInt(LengthModifier),
+    /// `%u` - Unsigned decimal integer.
     UnsignedInt(LengthModifier),
+    /// `%o` - Unsigned octal integer.
     OctalInt(LengthModifier),
+    /// `%x` or `%X` - Unsigned hexadecimal integer.
     HexInt(LengthModifier),
-    AutoInt(LengthModifier), // %i - auto-detect base
+    /// `%i` - Signed integer with auto-detected base (10, 8, or 16).
+    AutoInt(LengthModifier),
+    /// `%f`, `%e`, `%g`, `%a` (and uppercase variants) - Floating-point number.
     Float(LengthModifier),
+    /// `%s` - Sequence of non-whitespace characters (null-terminated in C).
     String,
-    Char(usize), // count
-    CharSet { inverted: bool, chars: String },
+    /// `%c` - Read a fixed number of characters (default 1, does NOT skip whitespace).
+    Char(usize),
+    /// `%[...]` or `%[^...]` - Character set matching.
+    CharSet {
+        /// If true, matches characters NOT in the set (`%[^...]`).
+        inverted: bool,
+        /// The expanded set of characters to match against.
+        chars: String,
+    },
+    /// `%p` - Pointer value (not implemented, returns InvalidFormat).
     Pointer,
-    Position, // %n
+    /// `%n` - Store the number of characters consumed so far (does not consume input).
+    Position,
+    /// A literal character that must match exactly in the input.
     Literal(char),
+    /// `%%` - Matches a literal percent sign in the input.
     Percent,
 }
 
+/// A parsed format specifier with all its components.
+///
+/// Represents a single conversion directive from the format string,
+/// including any modifiers like suppression (`*`) or field width.
 #[derive(Debug)]
 pub struct FormatSpec {
+    /// If true, the conversion is performed but the result is discarded (`*` modifier).
     pub suppress: bool,
+    /// Maximum field width (number of input characters to consume for this conversion).
     pub width: Option<usize>,
+    /// The type of conversion to perform.
     pub conversion: ConversionSpec,
 }
 
+/// A value scanned from input, with its type determined by the conversion specifier.
+///
+/// Unlike C's sscanf which writes to caller-provided pointers of specific types,
+/// this implementation returns typed values that the caller can match on.
 #[derive(Debug, PartialEq)]
 pub enum ScanValue {
+    /// 32-bit signed integer (from `%d`, `%i` without length modifier).
     I32(i32),
+    /// 64-bit signed integer (from `%d`, `%i` with `l` or `ll` modifier).
     I64(i64),
+    /// 32-bit unsigned integer (from `%u`, `%o`, `%x` without length modifier).
     U32(u32),
+    /// 64-bit unsigned integer (from `%u`, `%o`, `%x` with `l` or `ll` modifier).
     U64(u64),
+    /// 32-bit float (from `%f`, `%e`, `%g`, `%a` without `L` modifier).
     F32(f32),
+    /// 64-bit float (from `%f`, `%e`, `%g`, `%a` with `L` or `l` modifier).
     F64(f64),
+    /// String (from `%s` or `%[...]`).
     String(String),
+    /// Single character (from `%c` with default width of 1).
     Char(char),
+    /// Multiple characters as bytes (from `%c` with width > 1).
     Chars(Vec<u8>),
+    /// Position in input (from `%n` - number of bytes consumed so far).
     Position(usize),
 }
 
+/// Internal parser state for processing input during scanf operations.
 struct Parser<'a> {
+    /// The input bytes being parsed.
     input: &'a [u8],
+    /// Current position in the input.
     pos: usize,
 }
 
@@ -352,6 +485,28 @@ impl<'a> Parser<'a> {
     }
 }
 
+/// Parses a scanf format string into a sequence of format specifications.
+///
+/// # Arguments
+///
+/// * `format` - A format string using scanf-style conversion specifiers.
+///
+/// # Returns
+///
+/// A vector of [`FormatSpec`] on success, or [`ScanError::InvalidFormat`] if
+/// the format string is malformed.
+///
+/// # Example
+///
+/// ```
+/// use xj_scanf::parse_format;
+///
+/// let specs = parse_format("%d  %s").unwrap();
+/// assert_eq!(specs.len(), 4); // %d, space, space, %s
+/// assert_eq!(specs[1].width, None);
+/// assert_eq!(specs[1].suppress, false);
+/// assert_eq!(format!("{:?}", specs[1].conversion), "Literal(' ')");
+/// ```
 pub fn parse_format(format: &str) -> ScanResult<Vec<FormatSpec>> {
     let mut specs = Vec::new();
     let mut chars = format.chars().peekable();
@@ -497,6 +652,9 @@ pub fn parse_format(format: &str) -> ScanResult<Vec<FormatSpec>> {
     Ok(specs)
 }
 
+/// Expands character ranges in a character set specification.
+///
+/// For example, "a-z" becomes "abcdefghijklmnopqrstuvwxyz".
 fn expand_charset(charset: &str) -> String {
     let mut result = String::new();
     let chars: Vec<char> = charset.chars().collect();
@@ -520,6 +678,55 @@ fn expand_charset(charset: &str) -> String {
     result
 }
 
+/// Parses an input string according to a format specification.
+///
+/// This is the main entry point for scanf-style parsing. It processes the input
+/// string according to the format string and returns the parsed values.
+///
+/// # Arguments
+///
+/// * `input` - The input string to parse.
+/// * `format` - A scanf-style format string.
+///
+/// # Returns
+///
+/// On success, returns a tuple of:
+/// - `Vec<ScanValue>` - The values parsed from input (including `%n` positions)
+/// - `usize` - The count of successfully assigned conversions (excludes `%n`)
+///
+/// # Errors
+///
+/// - [`ScanError::Eof`] - Input exhausted before first conversion
+/// - [`ScanError::MatchFailure`] - Input doesn't match format
+/// - [`ScanError::InvalidFormat`] - Malformed format string
+///
+/// # Behavior Notes
+///
+/// - Whitespace in format matches any amount of input whitespace
+/// - `%c` and `%[...]` do NOT skip leading whitespace (use explicit space in format)
+/// - Partial matches return successfully with count of completed conversions
+/// - `%n` stores position but doesn't increment the assignment count
+///
+/// # Example
+///
+/// ```
+/// use xj_scanf::{sscanf_core, ScanValue};
+///
+/// // Parse multiple types
+/// let (values, count) = sscanf_core("42 3.14 hello", "%d %f %s").unwrap();
+/// assert_eq!(count, 3);
+///
+/// // Parse with position tracking
+/// let (values, count) = sscanf_core("abc", "%s%n").unwrap();
+/// assert_eq!(count, 1);
+/// if let ScanValue::Position(pos) = values[1] {
+///     assert_eq!(pos, 3);
+/// }
+///
+/// // Assignment suppression
+/// let (values, count) = sscanf_core("1 2 3", "%*d %d %*d").unwrap();
+/// assert_eq!(count, 1); // Only middle value assigned
+/// ```
 pub fn sscanf_core(input: &str, format: &str) -> ScanResult<(Vec<ScanValue>, usize)> {
     let specs = parse_format(format)?;
     let mut parser = Parser::new(input);
