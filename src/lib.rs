@@ -520,7 +520,7 @@ fn expand_charset(charset: &str) -> String {
     result
 }
 
-pub fn sscanf_internal(input: &str, format: &str) -> ScanResult<(Vec<ScanValue>, usize)> {
+pub fn sscanf_core(input: &str, format: &str) -> ScanResult<(Vec<ScanValue>, usize)> {
     let specs = parse_format(format)?;
     let mut parser = Parser::new(input);
     let mut values = Vec::new();
@@ -790,7 +790,7 @@ mod tests {
 
     #[test]
     fn test_simple_decimal_int() {
-        let (values, count) = sscanf_internal("42", "%d").unwrap();
+        let (values, count) = sscanf_core("42", "%d").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::I32(x) => assert_eq!(x, 42),
@@ -800,7 +800,7 @@ mod tests {
 
     #[test]
     fn test_negative_int() {
-        let (values, count) = sscanf_internal("-123", "%d").unwrap();
+        let (values, count) = sscanf_core("-123", "%d").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::I32(x) => assert_eq!(x, -123),
@@ -810,7 +810,7 @@ mod tests {
 
     #[test]
     fn test_multiple_ints() {
-        let (values, count) = sscanf_internal("1 2 3", "%d %d %d").unwrap();
+        let (values, count) = sscanf_core("1 2 3", "%d %d %d").unwrap();
         assert_eq!(count, 3);
         match (&values[0], &values[1], &values[2]) {
             (ScanValue::I32(a), ScanValue::I32(b), ScanValue::I32(c)) => {
@@ -824,7 +824,7 @@ mod tests {
 
     #[test]
     fn test_unsigned_int() {
-        let (values, count) = sscanf_internal("4294967295", "%u").unwrap();
+        let (values, count) = sscanf_core("4294967295", "%u").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::U32(x) => assert_eq!(x, 4294967295),
@@ -834,7 +834,7 @@ mod tests {
 
     #[test]
     fn test_octal_int() {
-        let (values, count) = sscanf_internal("755", "%o").unwrap();
+        let (values, count) = sscanf_core("755", "%o").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::U32(x) => assert_eq!(x, 0o755),
@@ -844,7 +844,7 @@ mod tests {
 
     #[test]
     fn test_hex_int() {
-        let (values, count) = sscanf_internal("1a2b", "%x").unwrap();
+        let (values, count) = sscanf_core("1a2b", "%x").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::U32(x) => assert_eq!(x, 0x1a2b),
@@ -854,7 +854,7 @@ mod tests {
 
     #[test]
     fn test_hex_with_prefix() {
-        let (values, count) = sscanf_internal("0xDEAD", "%x").unwrap();
+        let (values, count) = sscanf_core("0xDEAD", "%x").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::U32(x) => assert_eq!(x, 0xDEAD),
@@ -864,7 +864,7 @@ mod tests {
 
     #[test]
     fn test_i_decimal() {
-        let (values, count) = sscanf_internal("123", "%i").unwrap();
+        let (values, count) = sscanf_core("123", "%i").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::I32(x) => assert_eq!(x, 123),
@@ -874,7 +874,7 @@ mod tests {
 
     #[test]
     fn test_i_octal() {
-        let (values, count) = sscanf_internal("0755", "%i").unwrap();
+        let (values, count) = sscanf_core("0755", "%i").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::I32(x) => assert_eq!(x, 0o755),
@@ -884,7 +884,7 @@ mod tests {
 
     #[test]
     fn test_i_hex() {
-        let (values, count) = sscanf_internal("0x1A", "%i").unwrap();
+        let (values, count) = sscanf_core("0x1A", "%i").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::I32(x) => assert_eq!(x, 0x1A),
@@ -894,7 +894,7 @@ mod tests {
 
     #[test]
     fn test_float_basic() {
-        let (values, count) = sscanf_internal("3.14", "%f").unwrap();
+        let (values, count) = sscanf_core("3.14", "%f").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::F32(x) => assert!((x - 3.14).abs() < 0.001),
@@ -904,7 +904,7 @@ mod tests {
 
     #[test]
     fn test_float_negative() {
-        let (values, count) = sscanf_internal("-2.5", "%f").unwrap();
+        let (values, count) = sscanf_core("-2.5", "%f").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::F32(x) => assert!((x + 2.5).abs() < 0.001),
@@ -914,7 +914,7 @@ mod tests {
 
     #[test]
     fn test_float_exponent() {
-        let (values, count) = sscanf_internal("1.5e2", "%f").unwrap();
+        let (values, count) = sscanf_core("1.5e2", "%f").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::F32(x) => assert!((x - 150.0).abs() < 0.001),
@@ -924,7 +924,7 @@ mod tests {
 
     #[test]
     fn test_string_basic() {
-        let (values, count) = sscanf_internal("hello", "%s").unwrap();
+        let (values, count) = sscanf_core("hello", "%s").unwrap();
         assert_eq!(count, 1);
         match &values[0] {
             ScanValue::String(s) => assert_eq!(s, "hello"),
@@ -934,7 +934,7 @@ mod tests {
 
     #[test]
     fn test_string_stops_at_whitespace() {
-        let (values, count) = sscanf_internal("hello world", "%s").unwrap();
+        let (values, count) = sscanf_core("hello world", "%s").unwrap();
         assert_eq!(count, 1);
         match &values[0] {
             ScanValue::String(s) => assert_eq!(s, "hello"),
@@ -944,7 +944,7 @@ mod tests {
 
     #[test]
     fn test_string_with_width() {
-        let (values, count) = sscanf_internal("verylongword", "%5s").unwrap();
+        let (values, count) = sscanf_core("verylongword", "%5s").unwrap();
         assert_eq!(count, 1);
         match &values[0] {
             ScanValue::String(s) => assert_eq!(s, "veryl"),
@@ -954,7 +954,7 @@ mod tests {
 
     #[test]
     fn test_multiple_strings() {
-        let (values, count) = sscanf_internal("hello world", "%s %s").unwrap();
+        let (values, count) = sscanf_core("hello world", "%s %s").unwrap();
         assert_eq!(count, 2);
         match (&values[0], &values[1]) {
             (ScanValue::String(s1), ScanValue::String(s2)) => {
@@ -967,7 +967,7 @@ mod tests {
 
     #[test]
     fn test_char_single() {
-        let (values, count) = sscanf_internal("A", "%c").unwrap();
+        let (values, count) = sscanf_core("A", "%c").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::Char(c) => assert_eq!(c, 'A'),
@@ -977,7 +977,7 @@ mod tests {
 
     #[test]
     fn test_char_no_whitespace_skip() {
-        let (values, count) = sscanf_internal(" A", "%c").unwrap();
+        let (values, count) = sscanf_core(" A", "%c").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::Char(c) => assert_eq!(c, ' '),
@@ -987,7 +987,7 @@ mod tests {
 
     #[test]
     fn test_char_multiple() {
-        let (values, count) = sscanf_internal("ABCD", "%3c").unwrap();
+        let (values, count) = sscanf_core("ABCD", "%3c").unwrap();
         assert_eq!(count, 1);
         match &values[0] {
             ScanValue::Chars(chars) => {
@@ -1002,7 +1002,7 @@ mod tests {
 
     #[test]
     fn test_charset_basic() {
-        let (values, count) = sscanf_internal("abc123", "%[a-z]").unwrap();
+        let (values, count) = sscanf_core("abc123", "%[a-z]").unwrap();
         assert_eq!(count, 1);
         match &values[0] {
             ScanValue::String(s) => assert_eq!(s, "abc"),
@@ -1012,7 +1012,7 @@ mod tests {
 
     #[test]
     fn test_charset_inverted() {
-        let (values, count) = sscanf_internal("abc:def", "%[^:]").unwrap();
+        let (values, count) = sscanf_core("abc:def", "%[^:]").unwrap();
         assert_eq!(count, 1);
         match &values[0] {
             ScanValue::String(s) => assert_eq!(s, "abc"),
@@ -1022,7 +1022,7 @@ mod tests {
 
     #[test]
     fn test_suppression_int() {
-        let (values, count) = sscanf_internal("1 2 3", "%*d %d %*d").unwrap();
+        let (values, count) = sscanf_core("1 2 3", "%*d %d %*d").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::I32(x) => assert_eq!(x, 2),
@@ -1032,7 +1032,7 @@ mod tests {
 
     #[test]
     fn test_n_at_end() {
-        let (values, count) = sscanf_internal("123", "%d%n").unwrap();
+        let (values, count) = sscanf_core("123", "%d%n").unwrap();
         assert_eq!(count, 1);
         match (&values[0], &values[1]) {
             (ScanValue::I32(x), ScanValue::Position(n)) => {
@@ -1045,7 +1045,7 @@ mod tests {
 
     #[test]
     fn test_literal_match() {
-        let (values, count) = sscanf_internal("1,2", "%d,%d").unwrap();
+        let (values, count) = sscanf_core("1,2", "%d,%d").unwrap();
         assert_eq!(count, 2);
         match (&values[0], &values[1]) {
             (ScanValue::I32(x), ScanValue::I32(y)) => {
@@ -1058,19 +1058,19 @@ mod tests {
 
     #[test]
     fn test_empty_input() {
-        let result = sscanf_internal("", "%d");
+        let result = sscanf_core("", "%d");
         assert_eq!(result, Err(ScanError::Eof));
     }
 
     #[test]
     fn test_matching_failure() {
-        let result = sscanf_internal("abc", "%d");
+        let result = sscanf_core("abc", "%d");
         assert_eq!(result, Err(ScanError::MatchFailure));
     }
 
     #[test]
     fn test_partial_match() {
-        let (values, count) = sscanf_internal("123 abc", "%d %d").unwrap();
+        let (values, count) = sscanf_core("123 abc", "%d %d").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::I32(x) => assert_eq!(x, 123),
@@ -1080,7 +1080,7 @@ mod tests {
 
     #[test]
     fn test_percent_literal() {
-        let (values, count) = sscanf_internal("%42", "%%%d").unwrap();
+        let (values, count) = sscanf_core("%42", "%%%d").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::I32(x) => assert_eq!(x, 42),
@@ -1090,7 +1090,7 @@ mod tests {
 
     #[test]
     fn test_eof_in_format() {
-        let (values, count) = sscanf_internal("0", "%f%c").unwrap();
+        let (values, count) = sscanf_core("0", "%f%c").unwrap();
         assert_eq!(count, 1);
         assert_eq!(values.len(), 1);
         match values[0] {
@@ -1101,13 +1101,13 @@ mod tests {
 
     #[test]
     fn test_literal_eof() {
-        let result = sscanf_internal("", "a");
+        let result = sscanf_core("", "a");
         assert_eq!(result, Err(ScanError::Eof));
     }
 
     #[test]
     fn test_bytes_consumed_at_eof() {
-        let (values, count) = sscanf_internal("aa", "%s%n").unwrap();
+        let (values, count) = sscanf_core("aa", "%s%n").unwrap();
         assert_eq!(count, 1);
         assert_eq!(values.len(), 2);
         match &values[0] {
