@@ -46,9 +46,9 @@
 //! # Example
 //!
 //! ```
-//! use xj_scanf::{sscanf_core, ScanValue};
+//! use xj_scanf::{scanf_str, ScanValue};
 //!
-//! let (values, count) = sscanf_core("42 3.14 hello", "%d %f %s").unwrap();
+//! let (values, count) = scanf_str("42 3.14 hello", "%d %f %s").unwrap();
 //! assert_eq!(count, 3);
 //! ```
 //!
@@ -71,6 +71,7 @@
 pub mod legacy;
 
 use std::fmt;
+use std::io::BufRead;
 
 /// Errors that can occur during scanf operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -204,37 +205,57 @@ pub enum ScanValue {
 }
 
 /// Internal parser state for processing input during scanf operations.
-struct Parser<'a> {
-    /// The input bytes being parsed.
-    input: &'a [u8],
-    /// Current position in the input.
+struct Parser<R> {
+    /// The buffered reader to read from.
+    reader: R,
+    /// Peeked byte (if any).
+    peeked: Option<u8>,
+    /// Number of bytes consumed so far.
     pos: usize,
 }
 
-impl<'a> Parser<'a> {
-    fn new(input: &'a str) -> Self {
+impl<R: BufRead> Parser<R> {
+    fn new(reader: R) -> Self {
         Parser {
-            input: input.as_bytes(),
+            reader,
+            peeked: None,
             pos: 0,
         }
     }
 
-    fn peek(&self) -> Option<u8> {
-        if self.pos < self.input.len() {
-            Some(self.input[self.pos])
-        } else {
-            None
+    fn peek(&mut self) -> Option<u8> {
+        if self.peeked.is_some() {
+            return self.peeked;
+        }
+        match self.reader.fill_buf() {
+            Ok(buf) if !buf.is_empty() => {
+                self.peeked = Some(buf[0]);
+                self.peeked
+            }
+            _ => None,
         }
     }
 
     fn consume(&mut self) -> Option<u8> {
-        if self.pos < self.input.len() {
-            let ch = self.input[self.pos];
-            self.pos += 1;
-            Some(ch)
+        let byte = if let Some(b) = self.peeked.take() {
+            Some(b)
         } else {
-            None
+            match self.reader.fill_buf() {
+                Ok(buf) if !buf.is_empty() => Some(buf[0]),
+                _ => None,
+            }
+        };
+        if byte.is_some() {
+            self.reader.consume(1);
+            self.pos += 1;
         }
+        byte
+    }
+
+    fn unconsume(&mut self, byte: u8) {
+        debug_assert!(self.peeked.is_none(), "Cannot unconsume when peeked is set");
+        self.peeked = Some(byte);
+        self.pos -= 1;
     }
 
     fn skip_whitespace(&mut self) {
@@ -682,9 +703,6 @@ fn expand_charset(charset: &str) -> String {
 
 /// Parses an input string according to a format specification.
 ///
-/// This is the main entry point for scanf-style parsing. It processes the input
-/// string according to the format string and returns the parsed values.
-///
 /// # Arguments
 ///
 /// * `input` - The input string to parse.
@@ -712,26 +730,62 @@ fn expand_charset(charset: &str) -> String {
 /// # Example
 ///
 /// ```
-/// use xj_scanf::{sscanf_core, ScanValue};
+/// use xj_scanf::{scanf_str, ScanValue};
 ///
 /// // Parse multiple types
-/// let (values, count) = sscanf_core("42 3.14 hello", "%d %f %s").unwrap();
+/// let (values, count) = scanf_str("42 3.14 hello", "%d %f %s").unwrap();
 /// assert_eq!(count, 3);
 ///
 /// // Parse with position tracking
-/// let (values, count) = sscanf_core("abc", "%s%n").unwrap();
+/// let (values, count) = scanf_str("abc", "%s%n").unwrap();
 /// assert_eq!(count, 1);
 /// if let ScanValue::Position(pos) = values[1] {
 ///     assert_eq!(pos, 3);
 /// }
 ///
 /// // Assignment suppression
-/// let (values, count) = sscanf_core("1 2 3", "%*d %d %*d").unwrap();
+/// let (values, count) = scanf_str("1 2 3", "%*d %d %*d").unwrap();
 /// assert_eq!(count, 1); // Only middle value assigned
 /// ```
-pub fn sscanf_core(input: &str, format: &str) -> ScanResult<(Vec<ScanValue>, usize)> {
+pub fn scanf_str(input: &str, format: &str) -> ScanResult<(Vec<ScanValue>, usize)> {
+    scanf_core(input.as_bytes(), format)
+}
+
+/// Parses input from a [`BufRead`] source according to a format specification.
+///
+/// This is the generalized version of [`scanf_str`] that works with any buffered
+/// reader, enabling scanf-style parsing from files, stdin, or other IO sources.
+///
+/// # Arguments
+///
+/// * `reader` - Any type implementing [`BufRead`] to read input from.
+/// * `format` - A scanf-style format string.
+///
+/// # Returns
+///
+/// On success, returns a tuple of:
+/// - `Vec<ScanValue>` - The values parsed from input (including `%n` positions)
+/// - `usize` - The count of successfully assigned conversions (excludes `%n`)
+///
+/// # Errors
+///
+/// - [`ScanError::Eof`] - Input exhausted before first conversion
+/// - [`ScanError::MatchFailure`] - Input doesn't match format
+/// - [`ScanError::InvalidFormat`] - Malformed format string
+///
+/// # Example
+///
+/// ```
+/// use xj_scanf::{scanf_core, ScanValue};
+/// use std::io::Cursor;
+///
+/// let data = Cursor::new("123 456");
+/// let (values, count) = scanf_core(data, "%d %d").unwrap();
+/// assert_eq!(count, 2);
+/// ```
+pub fn scanf_core<R: BufRead>(reader: R, format: &str) -> ScanResult<(Vec<ScanValue>, usize)> {
     let specs = parse_format(format)?;
-    let mut parser = Parser::new(input);
+    let mut parser = Parser::new(reader);
     let mut values = Vec::new();
     let mut assigned_count = 0;
 
@@ -957,9 +1011,9 @@ pub fn sscanf_core(input: &str, format: &str) -> ScanResult<(Vec<ScanValue>, usi
                 } else {
                     match parser.consume() {
                         Some(input_ch) if input_ch == ch as u8 => {} // Match
-                        Some(_other_ch) => {
-                            // Mismatch
-                            parser.pos -= 1; // "un-consume"
+                        Some(other_ch) => {
+                            // Mismatch - put byte back
+                            parser.unconsume(other_ch);
                             if assigned_count == 0 {
                                 return Err(ScanError::MatchFailure);
                             }
@@ -999,7 +1053,7 @@ mod tests {
 
     #[test]
     fn test_simple_decimal_int() {
-        let (values, count) = sscanf_core("42", "%d").unwrap();
+        let (values, count) = scanf_str("42", "%d").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::I32(x) => assert_eq!(x, 42),
@@ -1009,7 +1063,7 @@ mod tests {
 
     #[test]
     fn test_negative_int() {
-        let (values, count) = sscanf_core("-123", "%d").unwrap();
+        let (values, count) = scanf_str("-123", "%d").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::I32(x) => assert_eq!(x, -123),
@@ -1019,7 +1073,7 @@ mod tests {
 
     #[test]
     fn test_multiple_ints() {
-        let (values, count) = sscanf_core("1 2 3", "%d %d %d").unwrap();
+        let (values, count) = scanf_str("1 2 3", "%d %d %d").unwrap();
         assert_eq!(count, 3);
         match (&values[0], &values[1], &values[2]) {
             (ScanValue::I32(a), ScanValue::I32(b), ScanValue::I32(c)) => {
@@ -1033,7 +1087,7 @@ mod tests {
 
     #[test]
     fn test_unsigned_int() {
-        let (values, count) = sscanf_core("4294967295", "%u").unwrap();
+        let (values, count) = scanf_str("4294967295", "%u").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::U32(x) => assert_eq!(x, 4294967295),
@@ -1043,7 +1097,7 @@ mod tests {
 
     #[test]
     fn test_octal_int() {
-        let (values, count) = sscanf_core("755", "%o").unwrap();
+        let (values, count) = scanf_str("755", "%o").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::U32(x) => assert_eq!(x, 0o755),
@@ -1053,7 +1107,7 @@ mod tests {
 
     #[test]
     fn test_hex_int() {
-        let (values, count) = sscanf_core("1a2b", "%x").unwrap();
+        let (values, count) = scanf_str("1a2b", "%x").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::U32(x) => assert_eq!(x, 0x1a2b),
@@ -1063,7 +1117,7 @@ mod tests {
 
     #[test]
     fn test_hex_with_prefix() {
-        let (values, count) = sscanf_core("0xDEAD", "%x").unwrap();
+        let (values, count) = scanf_str("0xDEAD", "%x").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::U32(x) => assert_eq!(x, 0xDEAD),
@@ -1073,7 +1127,7 @@ mod tests {
 
     #[test]
     fn test_i_decimal() {
-        let (values, count) = sscanf_core("123", "%i").unwrap();
+        let (values, count) = scanf_str("123", "%i").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::I32(x) => assert_eq!(x, 123),
@@ -1083,7 +1137,7 @@ mod tests {
 
     #[test]
     fn test_i_octal() {
-        let (values, count) = sscanf_core("0755", "%i").unwrap();
+        let (values, count) = scanf_str("0755", "%i").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::I32(x) => assert_eq!(x, 0o755),
@@ -1093,7 +1147,7 @@ mod tests {
 
     #[test]
     fn test_i_hex() {
-        let (values, count) = sscanf_core("0x1A", "%i").unwrap();
+        let (values, count) = scanf_str("0x1A", "%i").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::I32(x) => assert_eq!(x, 0x1A),
@@ -1103,7 +1157,7 @@ mod tests {
 
     #[test]
     fn test_float_basic() {
-        let (values, count) = sscanf_core("3.14", "%f").unwrap();
+        let (values, count) = scanf_str("3.14", "%f").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::F32(x) => assert!((x - 3.14).abs() < 0.001),
@@ -1113,7 +1167,7 @@ mod tests {
 
     #[test]
     fn test_float_negative() {
-        let (values, count) = sscanf_core("-2.5", "%f").unwrap();
+        let (values, count) = scanf_str("-2.5", "%f").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::F32(x) => assert!((x + 2.5).abs() < 0.001),
@@ -1123,7 +1177,7 @@ mod tests {
 
     #[test]
     fn test_float_exponent() {
-        let (values, count) = sscanf_core("1.5e2", "%f").unwrap();
+        let (values, count) = scanf_str("1.5e2", "%f").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::F32(x) => assert!((x - 150.0).abs() < 0.001),
@@ -1133,7 +1187,7 @@ mod tests {
 
     #[test]
     fn test_string_basic() {
-        let (values, count) = sscanf_core("hello", "%s").unwrap();
+        let (values, count) = scanf_str("hello", "%s").unwrap();
         assert_eq!(count, 1);
         match &values[0] {
             ScanValue::String(s) => assert_eq!(s, "hello"),
@@ -1143,7 +1197,7 @@ mod tests {
 
     #[test]
     fn test_string_stops_at_whitespace() {
-        let (values, count) = sscanf_core("hello world", "%s").unwrap();
+        let (values, count) = scanf_str("hello world", "%s").unwrap();
         assert_eq!(count, 1);
         match &values[0] {
             ScanValue::String(s) => assert_eq!(s, "hello"),
@@ -1153,7 +1207,7 @@ mod tests {
 
     #[test]
     fn test_string_with_width() {
-        let (values, count) = sscanf_core("verylongword", "%5s").unwrap();
+        let (values, count) = scanf_str("verylongword", "%5s").unwrap();
         assert_eq!(count, 1);
         match &values[0] {
             ScanValue::String(s) => assert_eq!(s, "veryl"),
@@ -1163,7 +1217,7 @@ mod tests {
 
     #[test]
     fn test_multiple_strings() {
-        let (values, count) = sscanf_core("hello world", "%s %s").unwrap();
+        let (values, count) = scanf_str("hello world", "%s %s").unwrap();
         assert_eq!(count, 2);
         match (&values[0], &values[1]) {
             (ScanValue::String(s1), ScanValue::String(s2)) => {
@@ -1176,7 +1230,7 @@ mod tests {
 
     #[test]
     fn test_char_single() {
-        let (values, count) = sscanf_core("A", "%c").unwrap();
+        let (values, count) = scanf_str("A", "%c").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::Char(c) => assert_eq!(c, 'A'),
@@ -1186,7 +1240,7 @@ mod tests {
 
     #[test]
     fn test_char_no_whitespace_skip() {
-        let (values, count) = sscanf_core(" A", "%c").unwrap();
+        let (values, count) = scanf_str(" A", "%c").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::Char(c) => assert_eq!(c, ' '),
@@ -1196,7 +1250,7 @@ mod tests {
 
     #[test]
     fn test_char_multiple() {
-        let (values, count) = sscanf_core("ABCD", "%3c").unwrap();
+        let (values, count) = scanf_str("ABCD", "%3c").unwrap();
         assert_eq!(count, 1);
         match &values[0] {
             ScanValue::Chars(chars) => {
@@ -1211,7 +1265,7 @@ mod tests {
 
     #[test]
     fn test_charset_basic() {
-        let (values, count) = sscanf_core("abc123", "%[a-z]").unwrap();
+        let (values, count) = scanf_str("abc123", "%[a-z]").unwrap();
         assert_eq!(count, 1);
         match &values[0] {
             ScanValue::String(s) => assert_eq!(s, "abc"),
@@ -1221,7 +1275,7 @@ mod tests {
 
     #[test]
     fn test_charset_inverted() {
-        let (values, count) = sscanf_core("abc:def", "%[^:]").unwrap();
+        let (values, count) = scanf_str("abc:def", "%[^:]").unwrap();
         assert_eq!(count, 1);
         match &values[0] {
             ScanValue::String(s) => assert_eq!(s, "abc"),
@@ -1231,7 +1285,7 @@ mod tests {
 
     #[test]
     fn test_suppression_int() {
-        let (values, count) = sscanf_core("1 2 3", "%*d %d %*d").unwrap();
+        let (values, count) = scanf_str("1 2 3", "%*d %d %*d").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::I32(x) => assert_eq!(x, 2),
@@ -1241,7 +1295,7 @@ mod tests {
 
     #[test]
     fn test_n_at_end() {
-        let (values, count) = sscanf_core("123", "%d%n").unwrap();
+        let (values, count) = scanf_str("123", "%d%n").unwrap();
         assert_eq!(count, 1);
         match (&values[0], &values[1]) {
             (ScanValue::I32(x), ScanValue::Position(n)) => {
@@ -1254,7 +1308,7 @@ mod tests {
 
     #[test]
     fn test_literal_match() {
-        let (values, count) = sscanf_core("1,2", "%d,%d").unwrap();
+        let (values, count) = scanf_str("1,2", "%d,%d").unwrap();
         assert_eq!(count, 2);
         match (&values[0], &values[1]) {
             (ScanValue::I32(x), ScanValue::I32(y)) => {
@@ -1267,19 +1321,19 @@ mod tests {
 
     #[test]
     fn test_empty_input() {
-        let result = sscanf_core("", "%d");
+        let result = scanf_str("", "%d");
         assert_eq!(result, Err(ScanError::Eof));
     }
 
     #[test]
     fn test_matching_failure() {
-        let result = sscanf_core("abc", "%d");
+        let result = scanf_str("abc", "%d");
         assert_eq!(result, Err(ScanError::MatchFailure));
     }
 
     #[test]
     fn test_partial_match() {
-        let (values, count) = sscanf_core("123 abc", "%d %d").unwrap();
+        let (values, count) = scanf_str("123 abc", "%d %d").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::I32(x) => assert_eq!(x, 123),
@@ -1289,7 +1343,7 @@ mod tests {
 
     #[test]
     fn test_percent_literal() {
-        let (values, count) = sscanf_core("%42", "%%%d").unwrap();
+        let (values, count) = scanf_str("%42", "%%%d").unwrap();
         assert_eq!(count, 1);
         match values[0] {
             ScanValue::I32(x) => assert_eq!(x, 42),
@@ -1299,7 +1353,7 @@ mod tests {
 
     #[test]
     fn test_eof_in_format() {
-        let (values, count) = sscanf_core("0", "%f%c").unwrap();
+        let (values, count) = scanf_str("0", "%f%c").unwrap();
         assert_eq!(count, 1);
         assert_eq!(values.len(), 1);
         match values[0] {
@@ -1310,13 +1364,13 @@ mod tests {
 
     #[test]
     fn test_literal_eof() {
-        let result = sscanf_core("", "a");
+        let result = scanf_str("", "a");
         assert_eq!(result, Err(ScanError::Eof));
     }
 
     #[test]
     fn test_bytes_consumed_at_eof() {
-        let (values, count) = sscanf_core("aa", "%s%n").unwrap();
+        let (values, count) = scanf_str("aa", "%s%n").unwrap();
         assert_eq!(count, 1);
         assert_eq!(values.len(), 2);
         match &values[0] {
