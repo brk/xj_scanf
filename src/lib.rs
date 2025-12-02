@@ -1335,6 +1335,18 @@ mod tests {
     }
 
     #[test]
+    fn test_space_multi_char() {
+        let result = scanf_str(" xxx", "%3c");
+        assert_eq!(result, Ok(vec![ScanValue::Chars(" xx".into())]));
+    }
+
+    #[test]
+    fn test_space_string() {
+        let result = scanf_str(" xxx", "%3s");
+        assert_eq!(result, Ok(vec![ScanValue::String("xxx".into())]));
+    }
+
+    #[test]
     fn test_bytes_consumed_at_eof() {
         let values = scanf_str("aa", "%s%n").unwrap();
         assert_eq!(values.len(), 2);
