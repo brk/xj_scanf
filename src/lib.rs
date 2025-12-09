@@ -1359,4 +1359,23 @@ mod tests {
             _ => panic!("Wrong type for value 1"),
         }
     }
+
+    #[test]
+    fn test_nontrivial_1() {
+        let input = "4
+-2-2.0211.968
+0
+0
+0
+07
+2.0.0
+8
+86";
+        let result = scanf_str(input, "%d%f%f%f%d%d%d%d%f%f%f%d");
+        use crate::ScanValue::*;
+        assert_eq!(result,
+            Ok(vec![I32(4), F32(-2.0), F32(-2.0211), F32(0.968),
+                    I32(0), I32(0), I32(0), I32(7), F32(2.0),
+                    F32(0.0), F32(8.0), I32(86)]));
+    }
 }
