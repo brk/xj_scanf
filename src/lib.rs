@@ -182,6 +182,14 @@ pub struct FormatSpec {
 /// this implementation returns typed values that the caller can match on.
 #[derive(Debug, PartialEq)]
 pub enum ScanValue {
+    /// 8-bit signed integer (from `%d`, `%i` with `hh` length modifier).
+    I8(i8),
+    /// 8-bit unsigned integer (from `%u`, `%o`, `%x` with `hh` length modifier).
+    U8(u8),
+    /// 16-bit signed integer (from `%d`, `%i` with `h` length modifier).
+    I16(i16),
+    /// 16-bit unsigned integer (from `%u`, `%o`, `%x` with `h` length modifier).
+    U16(u16),
     /// 32-bit signed integer (from `%d`, `%i` without length modifier).
     I32(i32),
     /// 64-bit signed integer (from `%d`, `%i` with `l` or `ll` modifier).
@@ -823,12 +831,18 @@ pub fn scanf_core<R: BufRead>(reader: R, format: &str) -> ScanResult<Vec<ScanVal
             }
             ConversionSpec::UnsignedInt(len_mod) => {
                 parser.skip_whitespace();
-                match parser.read_int(spec.width, 10, false) {
+                match parser.read_int(spec.width, 10, true) {
                     Ok(s) => {
                         if !spec.suppress {
-                            let val = s.parse::<u64>().map_err(|_| ScanError::MatchFailure)?;
+                            let val: u64 = if s.starts_with('-') {
+                                s.parse::<i64>().map_err(|_| ScanError::MatchFailure)? as u64
+                            } else {
+                                s.parse::<u64>().map_err(|_| ScanError::MatchFailure)?
+                            };
                             values.push(match len_mod {
                                 LengthModifier::None => ScanValue::U32(val as u32),
+                                LengthModifier::Hh => ScanValue::U8(val as u8),
+                                LengthModifier::H => ScanValue::U16(val as u16),
                                 _ => ScanValue::U64(val),
                             });
                         }
@@ -1077,8 +1091,44 @@ mod tests {
     }
 
     #[test]
-    fn test_unsigned_int() {
+    fn test_unsigned_int_u32_max() {
         let values = scanf_str("4294967295", "%u").unwrap();
+        match values[0] {
+            ScanValue::U32(x) => assert_eq!(x, 4294967295),
+            _ => panic!("Wrong type"),
+        }
+    }
+
+    #[test]
+    fn test_unsigned_int_u32_max_to_u8() {
+        let values = scanf_str("4294967295", "%hhu").unwrap();
+        match values[0] {
+            ScanValue::U8(x) => assert_eq!(x, 255),
+            _ => panic!("Wrong type"),
+        }
+    }
+
+    #[test]
+    fn test_unsigned_int_u32_max_to_u16() {
+        let values = scanf_str("4294967295", "%hu").unwrap();
+        match values[0] {
+            ScanValue::U16(x) => assert_eq!(x, 65535),
+            _ => panic!("Wrong type"),
+        }
+    }
+
+    #[test]
+    fn test_unsigned_int_u64_max() {
+        let values = scanf_str("18446744073709551615", "%lu").unwrap();
+        match values[0] {
+            ScanValue::U64(x) => assert_eq!(x, 18446744073709551615),
+            _ => panic!("Wrong type"),
+        }
+    }
+
+    #[test]
+    fn test_unsigned_int_negative() {
+        let values = scanf_str("-1", "%u").unwrap();
         match values[0] {
             ScanValue::U32(x) => assert_eq!(x, 4294967295),
             _ => panic!("Wrong type"),
