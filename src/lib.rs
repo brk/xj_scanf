@@ -817,6 +817,8 @@ pub fn scanf_core<R: BufRead>(reader: R, format: &str) -> ScanResult<Vec<ScanVal
                             let val = s.parse::<i64>().map_err(|_| ScanError::MatchFailure)?;
                             values.push(match len_mod {
                                 LengthModifier::None => ScanValue::I32(val as i32),
+                                LengthModifier::Hh => ScanValue::I8(val as i8),
+                                LengthModifier::H => ScanValue::I16(val as i16),
                                 _ => ScanValue::I64(val),
                             });
                         }
@@ -864,6 +866,8 @@ pub fn scanf_core<R: BufRead>(reader: R, format: &str) -> ScanResult<Vec<ScanVal
                                 u64::from_str_radix(&s, 8).map_err(|_| ScanError::MatchFailure)?;
                             values.push(match len_mod {
                                 LengthModifier::None => ScanValue::U32(val as u32),
+                                LengthModifier::Hh => ScanValue::U8(val as u8),
+                                LengthModifier::H => ScanValue::U16(val as u16),
                                 _ => ScanValue::U64(val),
                             });
                         }
@@ -891,6 +895,8 @@ pub fn scanf_core<R: BufRead>(reader: R, format: &str) -> ScanResult<Vec<ScanVal
                                 .map_err(|_| ScanError::MatchFailure)?;
                             values.push(match len_mod {
                                 LengthModifier::None => ScanValue::U32(val as u32),
+                                LengthModifier::Hh => ScanValue::U8(val as u8),
+                                LengthModifier::H => ScanValue::U16(val as u16),
                                 _ => ScanValue::U64(val),
                             });
                         }
@@ -919,6 +925,8 @@ pub fn scanf_core<R: BufRead>(reader: R, format: &str) -> ScanResult<Vec<ScanVal
                                 .map_err(|_| ScanError::MatchFailure)?;
                             values.push(match len_mod {
                                 LengthModifier::None => ScanValue::I32(val as i32),
+                                LengthModifier::Hh => ScanValue::I8(val as i8),
+                                LengthModifier::H => ScanValue::I16(val as i16),
                                 _ => ScanValue::I64(val),
                             });
                         }
@@ -1078,6 +1086,24 @@ mod tests {
     }
 
     #[test]
+    fn test_signed_int_i8() {
+        let values = scanf_str("-1", "%hhd").unwrap();
+        match values[0] {
+            ScanValue::I8(x) => assert_eq!(x, -1),
+            _ => panic!("Wrong type"),
+        }
+    }
+
+    #[test]
+    fn test_signed_int_i16() {
+        let values = scanf_str("-1", "%hd").unwrap();
+        match values[0] {
+            ScanValue::I16(x) => assert_eq!(x, -1),
+            _ => panic!("Wrong type"),
+        }
+    }
+
+    #[test]
     fn test_multiple_ints() {
         let values = scanf_str("1 2 3", "%d %d %d").unwrap();
         match (&values[0], &values[1], &values[2]) {
@@ -1167,10 +1193,46 @@ mod tests {
     }
 
     #[test]
+    fn test_octal_int_u8() {
+        let values = scanf_str("377", "%hho").unwrap();
+        match values[0] {
+            ScanValue::U8(x) => assert_eq!(x, 255),
+            _ => panic!("Wrong type"),
+        }
+    }
+
+    #[test]
+    fn test_octal_int_u16() {
+        let values = scanf_str("177777", "%ho").unwrap();
+        match values[0] {
+            ScanValue::U16(x) => assert_eq!(x, 0o177777),
+            _ => panic!("Wrong type"),
+        }
+    }
+
+    #[test]
     fn test_hex_int() {
         let values = scanf_str("1a2b", "%x").unwrap();
         match values[0] {
             ScanValue::U32(x) => assert_eq!(x, 0x1a2b),
+            _ => panic!("Wrong type"),
+        }
+    }
+
+    #[test]
+    fn test_hex_int_u8() {
+        let values = scanf_str("ff", "%hhx").unwrap();
+        match values[0] {
+            ScanValue::U8(x) => assert_eq!(x, 0xff),
+            _ => panic!("Wrong type"),
+        }
+    }
+
+    #[test]
+    fn test_hex_int_u16() {
+        let values = scanf_str("ffff", "%hx").unwrap();
+        match values[0] {
+            ScanValue::U16(x) => assert_eq!(x, 0xffff),
             _ => panic!("Wrong type"),
         }
     }
@@ -1207,6 +1269,24 @@ mod tests {
         let values = scanf_str("0x1A", "%i").unwrap();
         match values[0] {
             ScanValue::I32(x) => assert_eq!(x, 0x1A),
+            _ => panic!("Wrong type"),
+        }
+    }
+
+    #[test]
+    fn test_auto_int_i8() {
+        let values = scanf_str("-1", "%hhi").unwrap();
+        match values[0] {
+            ScanValue::I8(x) => assert_eq!(x, -1),
+            _ => panic!("Wrong type"),
+        }
+    }
+
+    #[test]
+    fn test_auto_int_i16() {
+        let values = scanf_str("-1", "%hi").unwrap();
+        match values[0] {
+            ScanValue::I16(x) => assert_eq!(x, -1),
             _ => panic!("Wrong type"),
         }
     }
