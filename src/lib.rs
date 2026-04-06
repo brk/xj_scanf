@@ -1100,10 +1100,32 @@ mod tests {
     }
 
     #[test]
+    fn test_unsigned_int_u32_max_plus_one() {
+        // In C this produces different results depending on
+        // the size of unsigned long; on LP64 (64-bit Linux)
+        // it will be 0, on LLP64/ILP32 it will be u32::MAX
+        // (and would set errno=ERANGE).
+        let values = scanf_str("4294967296", "%u").unwrap();
+        match values[0] {
+            ScanValue::U32(x) => assert_eq!(x, 0),
+            _ => panic!("Wrong type"),
+        }
+    }
+
+    #[test]
     fn test_unsigned_int_u32_max_to_u8() {
         let values = scanf_str("4294967295", "%hhu").unwrap();
         match values[0] {
             ScanValue::U8(x) => assert_eq!(x, 255),
+            _ => panic!("Wrong type"),
+        }
+    }
+
+    #[test]
+    fn test_unsigned_int_u8_out_of_range() {
+        let values = scanf_str("257", "%hhu").unwrap();
+        match values[0] {
+            ScanValue::U8(x) => assert_eq!(x, 1),
             _ => panic!("Wrong type"),
         }
     }
