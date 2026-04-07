@@ -47,6 +47,22 @@ pub trait ScanTarget {
 impl ScanTarget for i8 {
     fn store(&mut self, value: &ScanValue) -> bool {
         match value {
+            ScanValue::I8(v) => {
+                *self = *v;
+                true
+            }
+            ScanValue::U8(v) => {
+                *self = *v as i8;
+                true
+            }
+            ScanValue::I16(v) => {
+                *self = *v as i8;
+                true
+            }
+            ScanValue::U16(v) => {
+                *self = *v as i8;
+                true
+            }
             ScanValue::I32(v) => {
                 *self = *v as i8;
                 true
@@ -67,6 +83,22 @@ impl ScanTarget for i8 {
 impl ScanTarget for i16 {
     fn store(&mut self, value: &ScanValue) -> bool {
         match value {
+            ScanValue::I8(v) => {
+                *self = *v as i16;
+                true
+            }
+            ScanValue::U8(v) => {
+                *self = *v as i16;
+                true
+            }
+            ScanValue::I16(v) => {
+                *self = *v;
+                true
+            }
+            ScanValue::U16(v) => {
+                *self = *v as i16;
+                true
+            }
             ScanValue::I32(v) => {
                 *self = *v as i16;
                 true
@@ -87,6 +119,22 @@ impl ScanTarget for i16 {
 impl ScanTarget for i32 {
     fn store(&mut self, value: &ScanValue) -> bool {
         match value {
+            ScanValue::I8(v) => {
+                *self = *v as i32;
+                true
+            }
+            ScanValue::U8(v) => {
+                *self = *v as i32;
+                true
+            }
+            ScanValue::I16(v) => {
+                *self = *v as i32;
+                true
+            }
+            ScanValue::U16(v) => {
+                *self = *v as i32;
+                true
+            }
             ScanValue::I32(v) => {
                 *self = *v;
                 true
@@ -111,6 +159,22 @@ impl ScanTarget for i32 {
 impl ScanTarget for i64 {
     fn store(&mut self, value: &ScanValue) -> bool {
         match value {
+            ScanValue::I8(v) => {
+                *self = *v as i64;
+                true
+            }
+            ScanValue::U8(v) => {
+                *self = *v as i64;
+                true
+            }
+            ScanValue::I16(v) => {
+                *self = *v as i64;
+                true
+            }
+            ScanValue::U16(v) => {
+                *self = *v as i64;
+                true
+            }
             ScanValue::I32(v) => {
                 *self = *v as i64;
                 true
@@ -135,6 +199,22 @@ impl ScanTarget for i64 {
 impl ScanTarget for u8 {
     fn store(&mut self, value: &ScanValue) -> bool {
         match value {
+            ScanValue::I8(v) => {
+                *self = *v as u8;
+                true
+            }
+            ScanValue::U8(v) => {
+                *self = *v;
+                true
+            }
+            ScanValue::I16(v) => {
+                *self = *v as u8;
+                true
+            }
+            ScanValue::U16(v) => {
+                *self = *v as u8;
+                true
+            }
             ScanValue::U32(v) => {
                 *self = *v as u8;
                 true
@@ -155,6 +235,22 @@ impl ScanTarget for u8 {
 impl ScanTarget for u16 {
     fn store(&mut self, value: &ScanValue) -> bool {
         match value {
+            ScanValue::I8(v) => {
+                *self = *v as u16;
+                true
+            }
+            ScanValue::U8(v) => {
+                *self = *v as u16;
+                true
+            }
+            ScanValue::I16(v) => {
+                *self = *v as u16;
+                true
+            }
+            ScanValue::U16(v) => {
+                *self = *v;
+                true
+            }
             ScanValue::U32(v) => {
                 *self = *v as u16;
                 true
@@ -175,6 +271,22 @@ impl ScanTarget for u16 {
 impl ScanTarget for u32 {
     fn store(&mut self, value: &ScanValue) -> bool {
         match value {
+            ScanValue::I8(v) => {
+                *self = *v as u32;
+                true
+            }
+            ScanValue::U8(v) => {
+                *self = *v as u32;
+                true
+            }
+            ScanValue::I16(v) => {
+                *self = *v as u32;
+                true
+            }
+            ScanValue::U16(v) => {
+                *self = *v as u32;
+                true
+            }
             ScanValue::U32(v) => {
                 *self = *v;
                 true
@@ -199,6 +311,22 @@ impl ScanTarget for u32 {
 impl ScanTarget for u64 {
     fn store(&mut self, value: &ScanValue) -> bool {
         match value {
+            ScanValue::I8(v) => {
+                *self = *v as u64;
+                true
+            }
+            ScanValue::U8(v) => {
+                *self = *v as u64;
+                true
+            }
+            ScanValue::I16(v) => {
+                *self = *v as u64;
+                true
+            }
+            ScanValue::U16(v) => {
+                *self = *v as u64;
+                true
+            }
             ScanValue::U32(v) => {
                 *self = *v as u64;
                 true
@@ -349,6 +477,14 @@ impl ScanTarget for usize {
         match value {
             ScanValue::Position(v) => {
                 *self = *v;
+                true
+            }
+            ScanValue::U8(v) => {
+                *self = *v as usize;
+                true
+            }
+            ScanValue::U16(v) => {
+                *self = *v as usize;
                 true
             }
             ScanValue::U32(v) => {
