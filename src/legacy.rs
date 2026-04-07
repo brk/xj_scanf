@@ -787,4 +787,135 @@ mod tests {
         let count = brscanf!(input, "%%%%");
         assert_eq!(count, 0);
     }
+
+    // Tests for ScanValue::I8/U8/I16/U16 storage into ScanTarget types.
+    // These use the hh/h length modifiers which produce those variants.
+
+    #[test]
+    fn test_hhd_into_i8() {
+        let mut x: i8 = 0;
+        let count = sscanf("42", "%hhd", &mut [&mut x]);
+        assert_eq!(count, 1);
+        assert_eq!(x, 42i8);
+    }
+
+    #[test]
+    fn test_hhd_negative_into_i8() {
+        let mut x: i8 = 0;
+        let count = sscanf("-1", "%hhd", &mut [&mut x]);
+        assert_eq!(count, 1);
+        assert_eq!(x, -1i8);
+    }
+
+    #[test]
+    fn test_hhd_into_i32() {
+        let mut x: i32 = 0;
+        let count = sscanf("99", "%hhd", &mut [&mut x]);
+        assert_eq!(count, 1);
+        assert_eq!(x, 99);
+    }
+
+    #[test]
+    fn test_hhd_into_i64() {
+        let mut x: i64 = 0;
+        let count = sscanf("127", "%hhd", &mut [&mut x]);
+        assert_eq!(count, 1);
+        assert_eq!(x, 127i64);
+    }
+
+    #[test]
+    fn test_hhu_into_u8() {
+        let mut x: u8 = 0;
+        let count = sscanf("255", "%hhu", &mut [&mut x]);
+        assert_eq!(count, 1);
+        assert_eq!(x, 255u8);
+    }
+
+    #[test]
+    fn test_hhu_into_u32() {
+        let mut x: u32 = 0;
+        let count = sscanf("200", "%hhu", &mut [&mut x]);
+        assert_eq!(count, 1);
+        assert_eq!(x, 200u32);
+    }
+
+    #[test]
+    fn test_hhu_into_u64() {
+        let mut x: u64 = 0;
+        let count = sscanf("128", "%hhu", &mut [&mut x]);
+        assert_eq!(count, 1);
+        assert_eq!(x, 128u64);
+    }
+
+    #[test]
+    fn test_hhu_into_usize() {
+        let mut x: usize = 0;
+        let count = sscanf("10", "%hhu", &mut [&mut x]);
+        assert_eq!(count, 1);
+        assert_eq!(x, 10usize);
+    }
+
+    #[test]
+    fn test_hd_into_i16() {
+        let mut x: i16 = 0;
+        let count = sscanf("32767", "%hd", &mut [&mut x]);
+        assert_eq!(count, 1);
+        assert_eq!(x, 32767i16);
+    }
+
+    #[test]
+    fn test_hd_negative_into_i16() {
+        let mut x: i16 = 0;
+        let count = sscanf("-32768", "%hd", &mut [&mut x]);
+        assert_eq!(count, 1);
+        assert_eq!(x, -32768i16);
+    }
+
+    #[test]
+    fn test_hd_into_i32() {
+        let mut x: i32 = 0;
+        let count = sscanf("1000", "%hd", &mut [&mut x]);
+        assert_eq!(count, 1);
+        assert_eq!(x, 1000);
+    }
+
+    #[test]
+    fn test_hd_into_i64() {
+        let mut x: i64 = 0;
+        let count = sscanf("-500", "%hd", &mut [&mut x]);
+        assert_eq!(count, 1);
+        assert_eq!(x, -500i64);
+    }
+
+    #[test]
+    fn test_hu_into_u16() {
+        let mut x: u16 = 0;
+        let count = sscanf("65535", "%hu", &mut [&mut x]);
+        assert_eq!(count, 1);
+        assert_eq!(x, 65535u16);
+    }
+
+    #[test]
+    fn test_hu_into_u32() {
+        let mut x: u32 = 0;
+        let count = sscanf("60000", "%hu", &mut [&mut x]);
+        assert_eq!(count, 1);
+        assert_eq!(x, 60000u32);
+    }
+
+    #[test]
+    fn test_hu_into_u64() {
+        let mut x: u64 = 0;
+        let count = sscanf("50000", "%hu", &mut [&mut x]);
+        assert_eq!(count, 1);
+        assert_eq!(x, 50000u64);
+    }
+
+    #[test]
+    fn test_hu_into_usize() {
+        let mut x: usize = 0;
+        let count = sscanf("12345", "%hu", &mut [&mut x]);
+        assert_eq!(count, 1);
+        assert_eq!(x, 12345usize);
+    }
 }
