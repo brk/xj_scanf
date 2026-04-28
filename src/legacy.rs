@@ -71,6 +71,14 @@ impl ScanTarget for i8 {
                 *self = *v as i8;
                 true
             }
+            ScanValue::U32(v) => {
+                *self = *v as i8;
+                true
+            }
+            ScanValue::U64(v) => {
+                *self = *v as i8;
+                true
+            }
             ScanValue::Char(c) => {
                 *self = *c as i8;
                 true
@@ -107,6 +115,14 @@ impl ScanTarget for i16 {
                 *self = *v as i16;
                 true
             }
+            ScanValue::U32(v) => {
+                *self = *v as i16;
+                true
+            }
+            ScanValue::U64(v) => {
+                *self = *v as i16;
+                true
+            }
             ScanValue::Char(c) => {
                 *self = *c as i16;
                 true
@@ -140,6 +156,14 @@ impl ScanTarget for i32 {
                 true
             }
             ScanValue::I64(v) => {
+                *self = *v as i32;
+                true
+            }
+            ScanValue::U32(v) => {
+                *self = *v as i32;
+                true
+            }
+            ScanValue::U64(v) => {
                 *self = *v as i32;
                 true
             }
@@ -183,6 +207,14 @@ impl ScanTarget for i64 {
                 *self = *v;
                 true
             }
+            ScanValue::U32(v) => {
+                *self = *v as i64;
+                true
+            }
+            ScanValue::U64(v) => {
+                *self = *v as i64;
+                true
+            }
             ScanValue::Char(c) => {
                 *self = *c as i64;
                 true
@@ -212,6 +244,14 @@ impl ScanTarget for u8 {
                 true
             }
             ScanValue::U16(v) => {
+                *self = *v as u8;
+                true
+            }
+            ScanValue::I32(v) => {
+                *self = *v as u8;
+                true
+            }
+            ScanValue::I64(v) => {
                 *self = *v as u8;
                 true
             }
@@ -251,6 +291,14 @@ impl ScanTarget for u16 {
                 *self = *v;
                 true
             }
+            ScanValue::I32(v) => {
+                *self = *v as u16;
+                true
+            }
+            ScanValue::I64(v) => {
+                *self = *v as u16;
+                true
+            }
             ScanValue::U32(v) => {
                 *self = *v as u16;
                 true
@@ -284,6 +332,14 @@ impl ScanTarget for u32 {
                 true
             }
             ScanValue::U16(v) => {
+                *self = *v as u32;
+                true
+            }
+            ScanValue::I32(v) => {
+                *self = *v as u32;
+                true
+            }
+            ScanValue::I64(v) => {
                 *self = *v as u32;
                 true
             }
@@ -324,6 +380,14 @@ impl ScanTarget for u64 {
                 true
             }
             ScanValue::U16(v) => {
+                *self = *v as u64;
+                true
+            }
+            ScanValue::I32(v) => {
+                *self = *v as u64;
+                true
+            }
+            ScanValue::I64(v) => {
                 *self = *v as u64;
                 true
             }
@@ -479,7 +543,15 @@ impl ScanTarget for usize {
                 *self = *v;
                 true
             }
+            ScanValue::I8(v) => {
+                *self = *v as usize;
+                true
+            }
             ScanValue::U8(v) => {
+                *self = *v as usize;
+                true
+            }
+            ScanValue::I16(v) => {
                 *self = *v as usize;
                 true
             }
@@ -487,7 +559,15 @@ impl ScanTarget for usize {
                 *self = *v as usize;
                 true
             }
+            ScanValue::I32(v) => {
+                *self = *v as usize;
+                true
+            }
             ScanValue::U32(v) => {
+                *self = *v as usize;
+                true
+            }
+            ScanValue::I64(v) => {
                 *self = *v as usize;
                 true
             }
@@ -705,6 +785,14 @@ mod tests {
         let count = sscanf("42", "%d", &mut [&mut x]);
         assert_eq!(count, 1);
         assert_eq!(x, 42);
+    }
+
+    #[test]
+    fn test_scanf_single_int_space_to_u32() {
+        let mut x: u32 = 0;
+        let count = sscanf("1222333444", "%d ", &mut [&mut x]);
+        assert_eq!(count, 1);
+        assert_eq!(x, 1222333444);
     }
 
     #[test]
