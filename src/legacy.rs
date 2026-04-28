@@ -526,6 +526,8 @@ impl ScanTarget for &mut [u8] {
                 let bytes = s.as_bytes();
                 if bytes.len() <= self.len() {
                     self[..bytes.len()].copy_from_slice(bytes);
+                    // Add a terminating null byte, if we have room.
+                    if bytes.len() < self.len() { self[bytes.len()] = 0; }
                     true
                 } else {
                     false // Buffer too small
@@ -958,18 +960,18 @@ mod tests {
 
     #[test]
     fn test_scanf_slice_u8_chars() {
-        let mut buf = [0u8; 10];
+        let mut buf = [95u8; 10]; // ascii 95 = _
         let count = sscanf("ABC", "%3c", &mut [&mut &mut buf[..]]);
         assert_eq!(count, 1);
-        assert_eq!(&buf[..3], b"ABC");
+        assert_eq!(&buf[..4], b"ABC_");
     }
 
     #[test]
-    fn test_scanf_slice_u8_string() {
-        let mut buf = [0u8; 10];
+    fn test_scanf_slice_u8_string_null_terminator() {
+        let mut buf = [95u8; 10]; // ascii 95 = _
         let count = sscanf("hello", "%s", &mut [&mut &mut buf[..]]);
         assert_eq!(count, 1);
-        assert_eq!(&buf[..5], b"hello");
+        assert_eq!(&buf[..7], b"hello\0_");
     }
 
     #[test]
@@ -978,6 +980,14 @@ mod tests {
         let count = sscanf("X", "%c", &mut [&mut &mut buf[..]]);
         assert_eq!(count, 1);
         assert_eq!(buf[0], b'X');
+    }
+
+    #[test]
+    fn test_scanf_slice_u8_range_lim() {
+        let mut buf = [0u8; 10];
+        let count = sscanf("aaaa bbbb cccc\ndddd", "%9[^\n]", &mut [&mut &mut buf[..]]);
+        assert_eq!(count, 1);
+        assert_eq!(&buf[..], b"aaaa bbbb\0");
     }
 
     #[test]
