@@ -784,6 +784,31 @@ macro_rules! brscanf {
     }};
 }
 
+/// Macro for C-style sscanf with variadic arguments over a byte slice input.
+///
+/// This macro provides a more ergonomic interface for parsing from `&[u8]`.
+///
+/// # Example
+///
+/// ```
+/// use xj_scanf::{bscanf, legacy::ScanTarget};
+///
+/// let mut x: i32 = 0;
+/// let mut y: f32 = 0.0;
+/// let count = bscanf!(b"42 3.14", "%d %f", &mut x, &mut y);
+/// assert_eq!(count, 2);
+/// assert_eq!(x, 42);
+/// ```
+#[macro_export]
+macro_rules! bscanf {
+    ($input:expr, $fmt:expr $(,)?) => {{
+        $crate::legacy::bscanf($input, $fmt, &mut [])
+    }};
+    ($input:expr, $fmt:expr, $($arg:expr),+ $(,)?) => {{
+        $crate::legacy::bscanf($input, $fmt, &mut [$($arg as &mut dyn $crate::legacy::ScanTarget),+])
+    }};
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,7 +1,7 @@
-//! A safe, memory-safe Rust implementation of C's `sscanf` function.
+//! A safe Rust implementation of C's `scanf` family of functions.
 //!
-//! This library provides format string parsing functionality similar to C's scanf family,
-//! but with Rust's safety guarantees - no buffer overflows, no undefined behavior.
+//! This library provides C-style format string parsing functionality
+//! with Rust's safety guarantees - no buffer overflows, no undefined behavior.
 //!
 //! # Supported Format Specifiers
 //!
