@@ -1408,6 +1408,24 @@ mod tests {
     }
 
     #[test]
+    fn test_charset_width_exact() {
+        let values = scanf_str("ab12 ", "%4[a-z0-9] ").unwrap();
+        match &values[0] {
+            ScanValue::String(s) => assert_eq!(s, "ab12"),
+            _ => panic!("Wrong type"),
+        }
+    }
+
+    #[test]
+    fn test_charset_width_shorter() {
+        let values = scanf_str("ab12 ", "%5[a-z0-9] ").unwrap();
+        match &values[0] {
+            ScanValue::String(s) => assert_eq!(s, "ab12"),
+            _ => panic!("Wrong type"),
+        }
+    }
+
+    #[test]
     fn test_suppression_int() {
         let values = scanf_str("1 2 3", "%*d %d %*d").unwrap();
         match values[0] {
