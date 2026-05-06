@@ -605,7 +605,7 @@ fn process_scanf_result(
     }
 }
 
-/// C-compatible sscanf function.
+/// C-compatible sscanf function for string inputs.
 ///
 /// Parses the input string according to the format specification and stores
 /// the results in the provided mutable references.
@@ -636,6 +636,13 @@ fn process_scanf_result(
 /// ```
 pub fn sscanf(input: &str, format: &str, args: &mut [&mut dyn ScanTarget]) -> i32 {
     process_scanf_result(scanf_str(input, format), args)
+}
+
+/// C-compatible sscanf function for byte slice inputs.
+///
+/// See [`sscanf`] for the interface and return values of the string-input variant.
+pub fn bscanf(input: &[u8], format: &str, args: &mut [&mut dyn ScanTarget]) -> i32 {
+    brscanf(input, format, args)
 }
 
 /// C-compatible scanf function that reads from a BufRead source.
