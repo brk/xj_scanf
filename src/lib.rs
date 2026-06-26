@@ -1426,6 +1426,15 @@ mod tests {
     }
 
     #[test]
+    fn test_charset_managarm_mlibc_pull_1496() {
+        let values = scanf_str("zz-zxx-mmm ", "%7[zx-]").unwrap();
+        match &values[0] {
+            ScanValue::String(s) => assert_eq!(s, "zz-zxx-"),
+            _ => panic!("Wrong type"),
+        }
+    }
+
+    #[test]
     fn test_suppression_int() {
         let values = scanf_str("1 2 3", "%*d %d %*d").unwrap();
         match values[0] {
