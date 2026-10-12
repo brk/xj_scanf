@@ -1,0 +1,11 @@
+[package]
+name = "xj_scanf_core"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Shared byte-oriented C scanning format parser and destination requirements"
+license = "MIT"
+repository = "https://github.com/brk/xj_scanf/"
+
+[dependencies]
+xj_bytes = { version = "0.1.0", path = "../../xj_bytes" }

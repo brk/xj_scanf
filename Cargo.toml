@@ -1,10 +1,18 @@
 [package]
 name = "xj_scanf"
 description = "Safe reimplementation of `scanf()`"
-version = "0.2.6"
+version = "0.3.0"
 edition = "2024"
+rust-version = "1.85"
 license = "MIT"
 repository = "https://github.com/brk/xj_scanf/"
 
+[workspace]
+members = ["xj_scanf_core"]
+
 [dependencies]
+xj_scanf_core = { version = "0.1.0", path = "xj_scanf_core" }
 xj_bytes = { version = "0.1.0", path = "../xj_bytes" }
+
+[dev-dependencies]
+libc = "0.2"
