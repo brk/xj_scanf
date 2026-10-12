@@ -3,5 +3,12 @@
 version = 4
 
 [[package]]
+name = "xj_bytes"
+version = "0.1.0"
+
+[[package]]
 name = "xj_scanf"
 version = "0.2.6"
+dependencies = [
+ "xj_bytes",
+]

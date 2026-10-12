@@ -30,7 +30,7 @@
 //! assert_eq!(count, 2);
 //! ```
 
-use crate::{scanf_core, scanf_str, ScanError, ScanResult, ScanValue};
+use crate::{ByteView, ScanError, ScanResult, ScanValue, scanf_core, scanf_str};
 use std::io::{BufRead, stdin};
 
 /// Trait for types that can receive scanned values.
@@ -470,10 +470,13 @@ impl ScanTarget for String {
                 self.push(*v);
                 true
             }
-            ScanValue::Chars(v) => {
-                *self = String::from_utf8_lossy(v).into_owned();
-                true
-            }
+            ScanValue::Chars(v) => match String::from_utf8(v.clone()) {
+                Ok(text) => {
+                    *self = text;
+                    true
+                }
+                Err(_) => false,
+            },
             _ => false,
         }
     }
@@ -482,7 +485,7 @@ impl ScanTarget for String {
 impl ScanTarget for Vec<u8> {
     fn store(&mut self, value: &ScanValue) -> bool {
         match value {
-            ScanValue::Chars(v) => {
+            ScanValue::Chars(v) | ScanValue::Bytes(v) => {
                 *self = v.clone();
                 true
             }
@@ -520,6 +523,17 @@ impl ScanTarget for &mut [u8] {
                     true
                 } else {
                     false // Buffer too small
+                }
+            }
+            ScanValue::Bytes(bytes) => {
+                if bytes.len() <= self.len() {
+                    self[..bytes.len()].copy_from_slice(bytes);
+                    if bytes.len() < self.len() {
+                        self[bytes.len()] = 0;
+                    }
+                    true
+                } else {
+                    false
                 }
             }
             ScanValue::String(s) => {
@@ -589,15 +603,16 @@ fn process_scanf_result(
 ) -> i32 {
     match result {
         Ok(values) => {
-            // Count non-Position values (Position from %n doesn't count toward assignment count)
-            let count = values.iter()
-                .filter(|v| !matches!(v, ScanValue::Position(_)))
-                .count();
-
+            let mut count = 0;
             for (arg, val) in args.iter_mut().zip(values.iter()) {
-                arg.store(val);
+                if !arg.store(val) {
+                    break;
+                }
+                if !matches!(val, ScanValue::Position(_)) {
+                    count += 1;
+                }
             }
-            count as i32
+            count
         }
         Err(ScanError::Eof) => -1,
         Err(ScanError::MatchFailure) => 0,
@@ -608,7 +623,10 @@ fn process_scanf_result(
 /// C-compatible sscanf function for string inputs.
 ///
 /// Parses the input string according to the format specification and stores
-/// the results in the provided mutable references.
+/// the results in the provided mutable references. Input and format accept
+/// [`ByteView`] and stop at the first NUL or view end. Non-UTF-8 strings can be
+/// stored in byte destinations; a `String` destination rejects them without
+/// changing its contents. Assignments stop at the first failed store.
 ///
 /// # Arguments
 ///
@@ -634,15 +652,23 @@ fn process_scanf_result(
 /// assert_eq!(x, 10);
 /// assert_eq!(y, 20);
 /// ```
-pub fn sscanf(input: &str, format: &str, args: &mut [&mut dyn ScanTarget]) -> i32 {
+pub fn sscanf<I: ByteView + ?Sized, F: ByteView + ?Sized>(
+    input: &I,
+    format: &F,
+    args: &mut [&mut dyn ScanTarget],
+) -> i32 {
     process_scanf_result(scanf_str(input, format), args)
 }
 
-/// C-compatible sscanf function for byte slice inputs.
+/// Alias of [`sscanf`] for borrowed byte inputs, with the same NUL handling.
 ///
-/// See [`sscanf`] for the interface and return values of the string-input variant.
-pub fn bscanf(input: &[u8], format: &str, args: &mut [&mut dyn ScanTarget]) -> i32 {
-    brscanf(input, format, args)
+/// Use [`brscanf`] to read a stream in which NULs are ordinary input bytes.
+pub fn bscanf<I: ByteView + ?Sized, F: ByteView + ?Sized>(
+    input: &I,
+    format: &F,
+    args: &mut [&mut dyn ScanTarget],
+) -> i32 {
+    process_scanf_result(scanf_str(input, format), args)
 }
 
 /// C-compatible scanf function that reads from a BufRead source.
@@ -675,14 +701,21 @@ pub fn bscanf(input: &[u8], format: &str, args: &mut [&mut dyn ScanTarget]) -> i
 /// assert_eq!(count, 2);
 /// assert_eq!(x, 42);
 /// ```
-pub fn brscanf<R: BufRead>(reader: R, format: &str, args: &mut [&mut dyn ScanTarget]) -> i32 {
+pub fn brscanf<R: BufRead, F: ByteView + ?Sized>(
+    reader: R,
+    format: &F,
+    args: &mut [&mut dyn ScanTarget],
+) -> i32 {
     process_scanf_result(scanf_core(reader, format), args)
 }
 
 /// C-compatible scanf function that reads from standard input.
 ///
 /// Parses input from stdin according to the format specification and stores
-/// the results in the provided mutable references.
+/// the results in the provided mutable references. Input and format accept
+/// [`ByteView`] and stop at the first NUL or view end. Non-UTF-8 strings can be
+/// stored in byte destinations; a `String` destination rejects them without
+/// changing its contents. Assignments stop at the first failed store.
 ///
 /// # Arguments
 ///
@@ -704,7 +737,7 @@ pub fn brscanf<R: BufRead>(reader: R, format: &str, args: &mut [&mut dyn ScanTar
 /// let mut y: i32 = 0;
 /// let count = scanf("%d %d", &mut [&mut x, &mut y]);
 /// ```
-pub fn scanf(format: &str, args: &mut [&mut dyn ScanTarget]) -> i32 {
+pub fn scanf<F: ByteView + ?Sized>(format: &F, args: &mut [&mut dyn ScanTarget]) -> i32 {
     process_scanf_result(scanf_core(stdin().lock(), format), args)
 }
 

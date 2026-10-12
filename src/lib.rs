@@ -61,6 +61,11 @@
 //! - `Err(ScanError::MatchFailure)` - Input doesn't match format
 //! - `Err(ScanError::InvalidFormat)` - Malformed format string
 //!
+//! Inputs and formats accept [`ByteView`]. Formats and in-memory inputs stop
+//! at the first NUL or view end. Format literals, widths, scansets, and `%n`
+//! offsets operate on bytes. Non-UTF-8 string conversions return
+//! [`ScanValue::Bytes`] without replacing or re-encoding their contents.
+//!
 //! # Safety
 //!
 //! This implementation avoids all undefined behavior present in C's sscanf:
@@ -69,6 +74,9 @@
 //! - No type mismatches - values are returned as typed enums
 
 pub mod legacy;
+/// Shared borrowed byte inputs for in-memory data and scanf formats.
+pub use xj_bytes::ByteView;
+use xj_bytes::c_bytes;
 
 use std::fmt;
 use std::io::BufRead;
@@ -150,14 +158,14 @@ pub enum ConversionSpec {
         /// If true, matches characters NOT in the set (`%[^...]`).
         inverted: bool,
         /// The expanded set of characters to match against.
-        chars: String,
+        chars: Vec<u8>,
     },
     /// `%p` - Pointer value (not implemented, returns InvalidFormat).
     Pointer,
     /// `%n` - Store the number of characters consumed so far (does not consume input).
     Position,
     /// A literal character that must match exactly in the input.
-    Literal(char),
+    Literal(u8),
     /// `%%` - Matches a literal percent sign in the input.
     Percent,
 }
@@ -202,8 +210,10 @@ pub enum ScanValue {
     F32(f32),
     /// 64-bit float (from `%f`, `%e`, `%g`, `%a` with `L` or `l` modifier).
     F64(f64),
-    /// String (from `%s` or `%[...]`).
+    /// Valid UTF-8 string (from `%s` or `%[...]`).
     String(String),
+    /// Non-UTF-8 string bytes (from `%s` or `%[...]`), preserved exactly.
+    Bytes(Vec<u8>),
     /// Single character (from `%c` with default width of 1).
     Char(char),
     /// Multiple characters as bytes (from `%c` with width > 1).
@@ -268,7 +278,7 @@ impl<R: BufRead> Parser<R> {
 
     fn skip_whitespace(&mut self) {
         while let Some(ch) = self.peek() {
-            if ch.is_ascii_whitespace() {
+            if c_whitespace(ch) {
                 self.consume();
             } else {
                 break;
@@ -446,15 +456,15 @@ impl<R: BufRead> Parser<R> {
         Ok(result)
     }
 
-    fn read_string(&mut self, width: Option<usize>) -> ScanResult<String> {
+    fn read_string(&mut self, width: Option<usize>) -> ScanResult<Vec<u8>> {
         let max_width = width.unwrap_or(usize::MAX);
-        let mut result = String::new();
+        let mut result = Vec::new();
         let mut count = 0;
 
         while count < max_width {
             match self.peek() {
-                Some(ch) if !ch.is_ascii_whitespace() => {
-                    result.push(ch as char);
+                Some(ch) if !c_whitespace(ch) => {
+                    result.push(ch);
                     self.consume();
                     count += 1;
                 }
@@ -484,20 +494,19 @@ impl<R: BufRead> Parser<R> {
     fn read_charset(
         &mut self,
         inverted: bool,
-        charset: &str,
+        charset: &[u8],
         width: Option<usize>,
-    ) -> ScanResult<String> {
+    ) -> ScanResult<Vec<u8>> {
         let max_width = width.unwrap_or(usize::MAX);
-        let mut result = String::new();
+        let mut result = Vec::new();
         let mut count = 0;
 
         while count < max_width {
             match self.peek() {
                 Some(ch) => {
-                    let char_ch = ch as char;
-                    let in_set = charset.contains(char_ch);
+                    let in_set = charset.contains(&ch);
                     if in_set != inverted {
-                        result.push(char_ch);
+                        result.push(ch);
                         self.consume();
                         count += 1;
                     } else {
@@ -536,151 +545,140 @@ impl<R: BufRead> Parser<R> {
 /// assert_eq!(specs.len(), 4); // %d, space, space, %s
 /// assert_eq!(specs[1].width, None);
 /// assert_eq!(specs[1].suppress, false);
-/// assert_eq!(format!("{:?}", specs[1].conversion), "Literal(' ')");
+/// assert_eq!(format!("{:?}", specs[1].conversion), "Literal(32)");
 /// ```
-pub fn parse_format(format: &str) -> ScanResult<Vec<FormatSpec>> {
+pub fn parse_format<B: ByteView + ?Sized>(format: &B) -> ScanResult<Vec<FormatSpec>> {
     let mut specs = Vec::new();
-    let mut chars = format.chars().peekable();
+    let mut bytes = c_bytes(format.view_bytes()).iter().copied().peekable();
 
-    while let Some(ch) = chars.next() {
-        if ch == '%' {
-            let mut suppress = false;
-            let mut width = None;
-
-            // Check for %%
-            if chars.peek() == Some(&'%') {
-                chars.next();
-                specs.push(FormatSpec {
-                    suppress: false,
-                    width: None,
-                    conversion: ConversionSpec::Percent,
-                });
-                continue;
-            }
-
-            // Assignment suppression
-            if chars.peek() == Some(&'*') {
-                suppress = true;
-                chars.next();
-            }
-
-            // Field width
-            let mut width_str = String::new();
-            while let Some(&digit) = chars.peek() {
-                if digit.is_ascii_digit() {
-                    width_str.push(digit);
-                    chars.next();
+    while let Some(byte) = bytes.next() {
+        if byte != b'%' {
+            specs.push(FormatSpec {
+                suppress: false,
+                width: None,
+                conversion: ConversionSpec::Literal(if c_whitespace(byte) { b' ' } else { byte }),
+            });
+            continue;
+        }
+        if bytes.peek() == Some(&b'%') {
+            bytes.next();
+            specs.push(FormatSpec {
+                suppress: false,
+                width: None,
+                conversion: ConversionSpec::Percent,
+            });
+            continue;
+        }
+        let suppress = bytes.peek() == Some(&b'*');
+        if suppress {
+            bytes.next();
+        }
+        let mut width: Option<usize> = None;
+        while let Some(digit @ b'0'..=b'9') = bytes.peek().copied() {
+            bytes.next();
+            width = Some(
+                width
+                    .unwrap_or(0)
+                    .checked_mul(10)
+                    .and_then(|n| n.checked_add(usize::from(digit - b'0')))
+                    .ok_or(ScanError::InvalidFormat)?,
+            );
+        }
+        if width == Some(0) {
+            return Err(ScanError::InvalidFormat);
+        }
+        let length_mod = match bytes.peek().copied() {
+            Some(b'h') => {
+                bytes.next();
+                if bytes.peek() == Some(&b'h') {
+                    bytes.next();
+                    LengthModifier::Hh
                 } else {
-                    break;
+                    LengthModifier::H
                 }
             }
-            if !width_str.is_empty() {
-                width = Some(width_str.parse().map_err(|_| ScanError::InvalidFormat)?);
-            }
-
-            // Length modifier
-            let length_mod = match chars.peek() {
-                Some(&'h') => {
-                    chars.next();
-                    if chars.peek() == Some(&'h') {
-                        chars.next();
-                        LengthModifier::Hh
-                    } else {
-                        LengthModifier::H
-                    }
-                }
-                Some(&'l') => {
-                    chars.next();
-                    if chars.peek() == Some(&'l') {
-                        chars.next();
-                        LengthModifier::Ll
-                    } else {
-                        LengthModifier::L
-                    }
-                }
-                Some(&'L') => {
-                    chars.next();
+            Some(b'l') => {
+                bytes.next();
+                if bytes.peek() == Some(&b'l') {
+                    bytes.next();
+                    LengthModifier::Ll
+                } else {
                     LengthModifier::L
                 }
-                Some(&'j') => {
-                    chars.next();
-                    LengthModifier::J
+            }
+            Some(b'L') => {
+                bytes.next();
+                LengthModifier::L
+            }
+            Some(b'j') => {
+                bytes.next();
+                LengthModifier::J
+            }
+            Some(b'z') => {
+                bytes.next();
+                LengthModifier::Z
+            }
+            Some(b't') => {
+                bytes.next();
+                LengthModifier::T
+            }
+            _ => LengthModifier::None,
+        };
+        let conversion = match bytes.next() {
+            Some(b'd') => ConversionSpec::SignedInt(length_mod),
+            Some(b'i') => ConversionSpec::AutoInt(length_mod),
+            Some(b'u') => ConversionSpec::UnsignedInt(length_mod),
+            Some(b'o') => ConversionSpec::OctalInt(length_mod),
+            Some(b'x' | b'X') => ConversionSpec::HexInt(length_mod),
+            Some(b'f' | b'e' | b'g' | b'a' | b'F' | b'E' | b'G' | b'A') => {
+                ConversionSpec::Float(length_mod)
+            }
+            Some(b's') => ConversionSpec::String,
+            Some(b'c') => ConversionSpec::Char(width.unwrap_or(1)),
+            Some(b'n') => ConversionSpec::Position,
+            Some(b'p') => ConversionSpec::Pointer,
+            Some(b'[') => {
+                let inverted = bytes.peek() == Some(&b'^');
+                if inverted {
+                    bytes.next();
                 }
-                Some(&'z') => {
-                    chars.next();
-                    LengthModifier::Z
-                }
-                Some(&'t') => {
-                    chars.next();
-                    LengthModifier::T
-                }
-                _ => LengthModifier::None,
-            };
-
-            // Conversion specifier
-            let conversion = match chars.next() {
-                Some('d') => ConversionSpec::SignedInt(length_mod),
-                Some('i') => ConversionSpec::AutoInt(length_mod),
-                Some('u') => ConversionSpec::UnsignedInt(length_mod),
-                Some('o') => ConversionSpec::OctalInt(length_mod),
-                Some('x') | Some('X') => ConversionSpec::HexInt(length_mod),
-                Some('f') | Some('e') | Some('g') | Some('a') | Some('F') | Some('E')
-                | Some('G') | Some('A') => ConversionSpec::Float(length_mod),
-                Some('s') => ConversionSpec::String,
-                Some('c') => ConversionSpec::Char(width.unwrap_or(1)),
-                Some('n') => ConversionSpec::Position,
-                Some('p') => ConversionSpec::Pointer,
-                Some('[') => {
-                    let inverted = chars.peek() == Some(&'^');
-                    if inverted {
-                        chars.next();
+                let mut charset = Vec::new();
+                let mut closed = false;
+                for byte in bytes.by_ref() {
+                    if byte == b']' && !charset.is_empty() {
+                        closed = true;
+                        break;
                     }
-
-                    let mut charset = String::new();
-                    let mut first = true;
-
-                    while let Some(&ch) = chars.peek() {
-                        chars.next();
-                        if ch == ']' && !first {
-                            break;
-                        }
-                        charset.push(ch);
-                        first = false;
-                    }
-
-                    // Expand ranges
-                    let expanded = expand_charset(&charset);
-                    ConversionSpec::CharSet {
-                        inverted,
-                        chars: expanded,
-                    }
+                    charset.push(byte);
                 }
-                _ => return Err(ScanError::InvalidFormat),
-            };
-
-            specs.push(FormatSpec {
-                suppress,
-                width,
-                conversion,
-            });
-        } else if ch.is_whitespace() {
-            // Whitespace in format matches any amount of whitespace
-            specs.push(FormatSpec {
-                suppress: false,
-                width: None,
-                conversion: ConversionSpec::Literal(' '),
-            });
-        } else {
-            // Literal character
-            specs.push(FormatSpec {
-                suppress: false,
-                width: None,
-                conversion: ConversionSpec::Literal(ch),
-            });
-        }
+                if !closed {
+                    return Err(ScanError::InvalidFormat);
+                }
+                ConversionSpec::CharSet {
+                    inverted,
+                    chars: expand_charset(&charset),
+                }
+            }
+            _ => return Err(ScanError::InvalidFormat),
+        };
+        specs.push(FormatSpec {
+            suppress,
+            width,
+            conversion,
+        });
     }
-
     Ok(specs)
+}
+
+fn c_whitespace(byte: u8) -> bool {
+    matches!(byte, b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c)
+}
+
+fn scanned_string(bytes: Vec<u8>) -> ScanValue {
+    match String::from_utf8(bytes) {
+        Ok(text) => ScanValue::String(text),
+        Err(error) => ScanValue::Bytes(error.into_bytes()),
+    }
 }
 
 /// Counts the number of assigned values (excludes Position values from `%n`).
@@ -691,26 +689,18 @@ fn count_assigned(values: &[ScanValue]) -> usize {
 /// Expands character ranges in a character set specification.
 ///
 /// For example, "a-z" becomes "abcdefghijklmnopqrstuvwxyz".
-fn expand_charset(charset: &str) -> String {
-    let mut result = String::new();
-    let chars: Vec<char> = charset.chars().collect();
+fn expand_charset(charset: &[u8]) -> Vec<u8> {
+    let mut result = Vec::new();
     let mut i = 0;
-
-    while i < chars.len() {
-        if i + 2 < chars.len() && chars[i + 1] == '-' {
-            // Range
-            let start = chars[i] as u8;
-            let end = chars[i + 2] as u8;
-            for ch in start..=end {
-                result.push(ch as char);
-            }
+    while i < charset.len() {
+        if i + 2 < charset.len() && charset[i + 1] == b'-' && charset[i] <= charset[i + 2] {
+            result.extend(charset[i]..=charset[i + 2]);
             i += 3;
         } else {
-            result.push(chars[i]);
+            result.push(charset[i]);
             i += 1;
         }
     }
-
     result
 }
 
@@ -759,8 +749,11 @@ fn expand_charset(charset: &str) -> String {
 /// let values = scanf_str("1 2 3", "%*d %d %*d").unwrap();
 /// assert_eq!(values.len(), 1); // Only middle value assigned
 /// ```
-pub fn scanf_str(input: &str, format: &str) -> ScanResult<Vec<ScanValue>> {
-    scanf_core(input.as_bytes(), format)
+pub fn scanf_str<I: ByteView + ?Sized, F: ByteView + ?Sized>(
+    input: &I,
+    format: &F,
+) -> ScanResult<Vec<ScanValue>> {
+    scanf_core(c_bytes(input.view_bytes()), format)
 }
 
 /// Parses input from a [`BufRead`] source according to a format specification.
@@ -794,7 +787,10 @@ pub fn scanf_str(input: &str, format: &str) -> ScanResult<Vec<ScanValue>> {
 /// let values = scanf_core(data, "%d %d").unwrap();
 /// assert_eq!(values.len(), 2);
 /// ```
-pub fn scanf_core<R: BufRead>(reader: R, format: &str) -> ScanResult<Vec<ScanValue>> {
+pub fn scanf_core<R: BufRead, F: ByteView + ?Sized>(
+    reader: R,
+    format: &F,
+) -> ScanResult<Vec<ScanValue>> {
     let specs = parse_format(format)?;
     let mut parser = Parser::new(reader);
     let mut values = Vec::new();
@@ -971,14 +967,14 @@ pub fn scanf_core<R: BufRead>(reader: R, format: &str) -> ScanResult<Vec<ScanVal
                 match parser.read_string(spec.width) {
                     Ok(s) => {
                         if !spec.suppress {
-                            values.push(ScanValue::String(s));
+                            values.push(scanned_string(s));
                         }
                     }
                     Err(e) => {
-                        if count_assigned(&values) == 0 && e == ScanError::Eof {
-                            return Err(ScanError::Eof);
+                        if count_assigned(&values) == 0 {
+                            return Err(e);
                         }
-                        return Err(e);
+                        break;
                     }
                 }
             }
@@ -1005,7 +1001,7 @@ pub fn scanf_core<R: BufRead>(reader: R, format: &str) -> ScanResult<Vec<ScanVal
             } => match parser.read_charset(inverted, chars, spec.width) {
                 Ok(s) => {
                     if !spec.suppress {
-                        values.push(ScanValue::String(s));
+                        values.push(scanned_string(s));
                     }
                 }
                 Err(e) => {
@@ -1021,11 +1017,11 @@ pub fn scanf_core<R: BufRead>(reader: R, format: &str) -> ScanResult<Vec<ScanVal
                 }
             }
             ConversionSpec::Literal(ch) => {
-                if ch.is_whitespace() {
+                if c_whitespace(ch) {
                     parser.skip_whitespace();
                 } else {
                     match parser.consume() {
-                        Some(input_ch) if input_ch == ch as u8 => {} // Match
+                        Some(input_ch) if input_ch == ch => {} // Match
                         Some(other_ch) => {
                             // Mismatch - put byte back
                             parser.unconsume(other_ch);
